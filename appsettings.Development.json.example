@@ -1,0 +1,22 @@
+{
+  "Kestrel": {
+    "EndPoints": {
+      "Http": {
+        "Url": "http://0.0.0.0:5002"
+      },
+      "Https": {
+        "Url": "https://0.0.0.0:5003"
+      }
+    }
+  },
+  "Logging": {
+    "LogLevel": {
+      "Default": "Information",
+      "Microsoft.AspNetCore": "Warning"
+    }
+  },
+  "Mongo": {
+    "ConnectionString": "mongodb://localhost:27017",
+    "Database": "safepulse"
+  }
+}

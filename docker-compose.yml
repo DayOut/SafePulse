@@ -1,0 +1,38 @@
+version: "3.9"
+
+services:
+  api:
+    build: .
+    container_name: safepulse-api
+    ports:
+      - "8080:8080"
+    environment:
+      - Mongo__ConnectionString=mongodb://mongo:27017
+      - Mongo__Database=safepulse
+      - Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
+      - Telegram__WebhookSecretToken=${TELEGRAM_WEBHOOK_SECRET}
+    depends_on:
+      - mongo
+
+  mongo:
+    image: mongo:7
+    container_name: safepulse-mongo
+    restart: unless-stopped
+    ports:
+      - "27017:27017"
+    environment:
+      MONGO_INITDB_DATABASE: safepulse
+    volumes:
+      - mongo-data:/data/db
+
+  mongo-express:
+    image: mongo-express:1.0.2
+    container_name: safepulse-mongo-express
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      - ME_CONFIG_MONGODB_URL=mongodb://mongo:27017/
+
+volumes:
+  mongo-data:
