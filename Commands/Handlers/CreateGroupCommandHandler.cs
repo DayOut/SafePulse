@@ -26,7 +26,7 @@ public class CreateGroupCommandHandler(
         
         if (string.IsNullOrWhiteSpace(namePart))
         {
-            sb.Append("Будь ласка\\, надішли команду у форматі\\:\n/create Назва моєї групи");
+            sb.Append("Будь ласка, надішли команду у форматі:\n/create Назва моєї групи");
             return new TelegramCommandResult(sb.ToString());
         }
 
@@ -37,14 +37,18 @@ public class CreateGroupCommandHandler(
         }
         
         var group = await groupService.CreateAsync(context.User.Id, namePart, ct);
+        await groupService.JoinUserToGroupAsync(context.User, group.Id, ct);
         
         var inviteLink = $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
         
-        await groupNotifier.SendMessageAsync(inviteLink, context.User, ct);
+        sb.AppendLine($"Група \"{group.Name}\" готова.\n" +
+                      "Ти доданий до неї. Надішли це посилання іншим, щоб запросити їх:");
         
-        sb.AppendLine($"Група \"{group.Name}\" готова\\.\n" +
-                      "Ти доданий до неї\\. Надішли це посилання іншим, щоб запросити їх:");
+        await groupNotifier.SendMessageAsync(sb.ToString(), context.User, ct);
+        sb.Clear();
+        sb.Append($"<a href=\"{inviteLink}\">asd</a>");
+        await groupNotifier.SendMessageAsync(sb.ToString(), context.User, ct);
         
-        return new TelegramCommandResult(sb.ToString());
+        return new TelegramCommandResult(inviteLink);
     }
 }

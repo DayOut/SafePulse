@@ -12,7 +12,7 @@ public class JoinGroupCommandHandler(
 {
     public bool CanHandle(TelegramCommandContext context)
     {
-        return context.RawText.Contains("/join");
+        return context.RawText.StartsWith("/join");
     }
 
     public async Task<TelegramCommandResult?> HandleAsync(

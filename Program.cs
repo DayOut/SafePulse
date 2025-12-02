@@ -2,8 +2,8 @@ using HeartPulse.Commands;
 using HeartPulse.Commands.Handlers;
 using HeartPulse.Commands.Interfaces;
 using Microsoft.EntityFrameworkCore;
-using MongoDB.EntityFrameworkCore.Extensions;
 using HeartPulse.Data;
+using HeartPulse.Formatters;
 using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Notifiers;
 using HeartPulse.Notifiers.Builders;
@@ -39,7 +39,7 @@ services.AddScoped<IUserService, UserService>();
 services.AddScoped<IGroupService, GroupService>();
 services.AddScoped<IGroupNotificationBuilder, GroupNotificationBuilder>();
 services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();
-// services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
+services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
 services.AddScoped<ITelegramCommandDispatcher, TelegramCommandDispatcher>();
 
 // Реєструєш усі хендлери
@@ -50,7 +50,7 @@ services.AddScoped<ITelegramCommandHandler, GroupListCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, StartCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, CreateGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, JoinGroupCommandHandler>();
-// services.AddScoped<ITelegramCommandHandler, UnknownCommandHandler>();
+services.AddScoped<ITelegramCommandHandler, UnknownCommandHandler>();
 
 builder.Logging.ClearProviders();
 builder.Logging.AddConsole();
