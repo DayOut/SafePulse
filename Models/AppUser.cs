@@ -5,7 +5,6 @@ namespace HeartPulse.Models;
 
 public class AppUser
 {
-    // Для простоти використаємо Telegram UserId як Id (рядок).
     [Key]
     [BsonId]
     public string Id { get; set; } = default!;

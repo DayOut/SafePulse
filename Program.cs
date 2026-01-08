@@ -11,6 +11,7 @@ using HeartPulse.Notifiers.Interfaces;
 using HeartPulse.Options;
 using HeartPulse.Services;
 using HeartPulse.Services.Interfaces;
+using MongoDB.Driver;
 using Telegram.Bot;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -18,10 +19,17 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection("Telegram"));
 
 var mongoConn = builder.Configuration.GetValue<string>("Mongo:ConnectionString")!;
-var mongoDb   = builder.Configuration.GetValue<string>("Mongo:Database") ?? "safepulse";
+var mongoDb = builder.Configuration.GetValue<string>("Mongo:Database") ?? "safepulse";
 
 builder.Services.AddDbContext<SafePulseContext>(opt =>
     opt.UseMongoDB(mongoConn, mongoDb));
+
+builder.Services.AddSingleton<IMongoClient>(_ => new MongoClient(mongoConn));
+builder.Services.AddSingleton(sp =>
+{
+    var client = sp.GetRequiredService<IMongoClient>();
+    return client.GetDatabase(mongoDb);
+});
 
 builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
@@ -42,11 +50,12 @@ services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();
 services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
 services.AddScoped<ITelegramCommandDispatcher, TelegramCommandDispatcher>();
 
-// Реєструєш усі хендлери
+// Handlers
 services.AddScoped<ITelegramCommandHandler, SafeCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, HelpCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, ShelterCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, GroupListCommandHandler>();
+services.AddScoped<ITelegramCommandHandler, ReferalListCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, StartCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, CreateGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, JoinGroupCommandHandler>();
@@ -57,6 +66,13 @@ builder.Logging.AddConsole();
 builder.Logging.AddDebug();
 
 var app = builder.Build();
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<IMongoDatabase>();
+    await MongoIndexConfigurator.ConfigureAsync(db);
+}
+
 app.MapOpenApi();
 
 app.MapControllers();

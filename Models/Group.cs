@@ -7,7 +7,7 @@ public class Group
 {
     [Key]
     [BsonId]
-    public string Id { get; set; } = default!; // можеш зберігати свій рядковий Id або ObjectId.ToString()
+    public string Id { get; set; } = default!;
     public string Name { get; set; } = default!;
     public string OwnerId { get; set; } = default!;
 }
