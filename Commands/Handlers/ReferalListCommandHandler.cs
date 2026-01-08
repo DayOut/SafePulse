@@ -2,17 +2,21 @@ using System.Text;
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.Controllers;
 using HeartPulse.DTOs;
+using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Notifiers.Interfaces;
 using HeartPulse.Services.Interfaces;
 
 namespace HeartPulse.Commands.Handlers;
 
-public class GroupListCommandHandler(IGroupService groupService)
+public class ReferalListCommandHandler(
+    IGroupService groupService,
+    IGroupNotifier  groupNotifier,
+    ITelegramTextFormatter formatter)
     : ITelegramCommandHandler
 {
     public bool CanHandle(TelegramCommandContext context)
     {
-        return context.RawText is "/group";
+        return context.RawText is "/referal";
     }
 
     public async Task<TelegramCommandResult?> HandleAsync(
@@ -28,15 +32,14 @@ public class GroupListCommandHandler(IGroupService groupService)
             sb.AppendLine("Або приєднатись по посиланню від іншого користувача");
             return new TelegramCommandResult(sb.ToString());
         }
-
-       
-        sb.AppendLine("Твої групи:").AppendLine();
         
         foreach (var group in groups)
         {
-            sb.AppendLine($"- {group.Name}" + (group.OwnerId == context.User.Id ? " (Власник)" : ""));
+            await groupNotifier.SendMessageAsync(formatter.FormatGroupLink(group), context.User, ct);
         }
 
+        sb.AppendLine("Відправ одне з повідомлень вище тому кого ти хочеш додати до групи.");
+        sb.AppendLine("Їм достатньо перейти по посиланню, щоб приєднатись до групи");
         return new TelegramCommandResult(sb.ToString());
     }
 }
