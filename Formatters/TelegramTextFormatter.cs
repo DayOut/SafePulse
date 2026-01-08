@@ -1,3 +1,4 @@
+using HeartPulse.Controllers;
 using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Models;
 
@@ -19,6 +20,14 @@ public class TelegramTextFormatter: ITelegramTextFormatter
                 return "Невідомо";
         }
         throw new ArgumentOutOfRangeException(nameof(status));
+    }
+
+    public string FormatGroupLink(Group group)
+    {
+        var inviteLink = $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
+        var groupMess = "Твоє посилання на групу: ";
+        groupMess += $"<a href=\"{inviteLink}\">{group.Name}</a>";
+        return groupMess;
     }
 
     public string BuildUserGroupsList(string userId, IReadOnlyList<Group> groups)
