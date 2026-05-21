@@ -12,6 +12,7 @@ using HeartPulse.Options;
 using HeartPulse.Services;
 using HeartPulse.Services.Interfaces;
 using MongoDB.Driver;
+using Scalar.AspNetCore;
 using Telegram.Bot;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -35,6 +36,7 @@ builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
 
 builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddOpenApi();
 
 builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 {
@@ -74,6 +76,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 app.MapOpenApi();
+app.MapScalarApiReference();
 
 app.MapControllers();
 app.MapGet("/", () => Results.Ok("SafePulse API is running"));

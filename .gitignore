@@ -1,4 +1,7 @@
 .env
+.idea/*
 /bin/*
 /obj/*
 *.development.json
+/*.log
+*.user
