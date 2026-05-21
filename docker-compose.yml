@@ -9,6 +9,7 @@ services:
     environment:
       - Mongo__ConnectionString=mongodb://mongo:27017
       - Mongo__Database=safepulse
+      - Api__AdminKey=${API_ADMIN_KEY}
       - Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
       - Telegram__WebhookSecretToken=${TELEGRAM_WEBHOOK_SECRET}
     depends_on:

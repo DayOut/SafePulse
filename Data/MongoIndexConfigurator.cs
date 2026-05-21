@@ -9,8 +9,9 @@ public static class MongoIndexConfigurator
     public static async Task ConfigureAsync(IMongoDatabase db)
     {
         await ConfigureUserIndexesAsync(db);
-        // await ConfigureGroupIndexesAsync(db);
+        await ConfigureGroupIndexesAsync(db);
         await ConfigureGroupUserIndexesAsync(db);
+        await ConfigureGroupInviteIndexesAsync(db);
     }
 
     private static async Task ConfigureUserIndexesAsync(IMongoDatabase db)
@@ -29,23 +30,30 @@ public static class MongoIndexConfigurator
         var model = new CreateIndexModel<AppUser>(keys, options);
         await collection.Indexes.CreateOneAsync(model);
     }
-    
-    // private static Task ConfigureGroupIndexesAsync(IMongoDatabase db)
-    // {
-    //     var collection = db.GetCollection<Group>("groups");
-    //     
-    //     var indexes = new List<CreateIndexModel<Group>>();
-    //     
-    //     indexes.Add(new CreateIndexModel<Group>(
-    //         Builders<Group>.IndexKeys.Ascending(x => x.Id),
-    //         new CreateIndexOptions
-    //         {
-    //             Unique = true,
-    //             Name = "idx_users_telegram_chatid_unique"
-    //         }));
-    //     
-    //     await collection.Indexes.CreateManyAsync(indexes);
-    // }
+    private static async Task ConfigureGroupIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<Group>("groups");
+
+        var indexes = new List<CreateIndexModel<Group>>
+        {
+            new(
+                Builders<Group>.IndexKeys.Ascending(x => x.Name),
+                new CreateIndexOptions<Group>
+                {
+                    Unique = true,
+                    Name = "idx_groups_name_active_unique",
+                    PartialFilterExpression = Builders<Group>.Filter.Eq(x => x.IsDeleted, false)
+                }),
+            new(
+                Builders<Group>.IndexKeys.Ascending(x => x.OwnerId),
+                new CreateIndexOptions
+                {
+                    Name = "idx_groups_ownerId"
+                })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
     
     private static async Task ConfigureGroupUserIndexesAsync(IMongoDatabase db)
     {
@@ -57,9 +65,11 @@ public static class MongoIndexConfigurator
             Builders<GroupUser>.IndexKeys
                 .Ascending(x => x.UserId)
                 .Ascending(x => x.GroupId),
-            new CreateIndexOptions
+            new CreateIndexOptions<GroupUser>
             {
-                Name = "idx_userId_groupId"
+                Unique = true,
+                Name = "idx_userId_groupId_active_unique",
+                PartialFilterExpression = Builders<GroupUser>.Filter.Eq(x => x.IsDeleted, false)
             }));
         
         indexes.Add(new CreateIndexModel<GroupUser>(
@@ -71,6 +81,30 @@ public static class MongoIndexConfigurator
                 Name = "idx_groupId_userId"
             }));
         
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureGroupInviteIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<GroupInvite>("groupInvites");
+
+        var indexes = new List<CreateIndexModel<GroupInvite>>
+        {
+            new(
+                Builders<GroupInvite>.IndexKeys.Ascending(x => x.Token),
+                new CreateIndexOptions
+                {
+                    Unique = true,
+                    Name = "idx_groupInvites_token_unique"
+                }),
+            new(
+                Builders<GroupInvite>.IndexKeys.Ascending(x => x.GroupId),
+                new CreateIndexOptions
+                {
+                    Name = "idx_groupInvites_groupId"
+                })
+        };
+
         await collection.Indexes.CreateManyAsync(indexes);
     }
 }

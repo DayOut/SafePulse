@@ -31,7 +31,7 @@ public class StartCommandHandler(
             return new TelegramCommandResult("Групу не знайдено");
         
         var userGroups = await groupService.GetUserGroupsAsync(context.User.Id, ct);
-        if (userGroups.Contains(group))
+        if (userGroups.Any(g => g.Id == group.Id))
             return new TelegramCommandResult("Ви вже в цій групі");
         
         await groupService.JoinUserToGroupAsync(context.User, group.Id, ct);

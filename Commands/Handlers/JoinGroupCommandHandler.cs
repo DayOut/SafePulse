@@ -26,17 +26,18 @@ public class JoinGroupCommandHandler(
             return new TelegramCommandResult("Будь ласка, надішли команду у форматі: /join ID_групи");
         }
         
-        var groupId = parts[1].Trim();
+        var tokenOrGroupId = parts[1].Trim();
+        var group = await groupService.GetByJoinPayloadAsync($"join_{tokenOrGroupId}", ct);
 
-        if (await groupService.IsGroupIdExistAsync(groupId, ct))
+        if (group is null)
             return new TelegramCommandResult("Групу з таким ID не знайдено\\. Перевір, чи правильно скопійовано код");
         
         var groups = await groupService.GetUserGroupsAsync(context.User.Id, ct);
-        if (groups.Select(g => g.Id == groupId).Any())
+        if (groups.Any(g => g.Id == group.Id))
             return new TelegramCommandResult("Ви вже в цій групі");
         
-        await groupService.JoinUserToGroupAsync(context.User, groupId, ct);
+        await groupService.JoinUserToGroupAsync(context.User, group.Id, ct);
         
-        return new TelegramCommandResult($"Ти приєднався до групи {groupId}.");
+        return new TelegramCommandResult($"Ти приєднався до групи {group.Name}.");
     }
 }

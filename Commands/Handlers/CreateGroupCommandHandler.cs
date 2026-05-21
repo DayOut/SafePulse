@@ -38,8 +38,9 @@ public class CreateGroupCommandHandler(
         
         var group = await groupService.CreateAsync(context.User.Id, namePart, ct);
         await groupService.JoinUserToGroupAsync(context.User, group.Id, ct);
+        var invite = await groupService.CreateInviteAsync(group.Id, context.User.Id, "Telegram invite", ct);
         
-        var inviteLink = $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
+        var inviteLink = $"https://t.me/{TelegramController.BotUsername}?start=join_{invite.Token}";
         
         sb.AppendLine($"Група \"{group.Name}\" готова.\n" +
                       "Ти доданий до неї. Надішли це посилання іншим, щоб запросити їх:");

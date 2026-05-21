@@ -3,6 +3,7 @@ using HeartPulse.Commands.Handlers;
 using HeartPulse.Commands.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using HeartPulse.Data;
+using HeartPulse.Filters;
 using HeartPulse.Formatters;
 using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Notifiers;
@@ -32,7 +33,7 @@ builder.Services.AddSingleton(sp =>
     return client.GetDatabase(mongoDb);
 });
 
-builder.Services.AddControllers()
+builder.Services.AddControllers(options => options.Filters.Add<ApiKeyAuthFilter>())
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
 
 builder.Services.AddEndpointsApiExplorer();

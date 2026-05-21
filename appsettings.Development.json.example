@@ -18,5 +18,8 @@
   "Mongo": {
     "ConnectionString": "mongodb://localhost:27017",
     "Database": "safepulse"
+  },
+  "Api": {
+    "AdminKey": "dev-admin-key"
   }
 }
