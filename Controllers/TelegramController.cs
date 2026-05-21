@@ -58,12 +58,12 @@ public class TelegramController(
     [HttpPost]
     public async Task<IActionResult> Post([FromBody] Update update, CancellationToken ct)
     {
-        var secret = Request.Headers["X-Telegram-Bot-Api-Secret-Token"].FirstOrDefault();
-        if (!string.IsNullOrEmpty(_opts.WebhookSecretToken) &&
-            !string.Equals(secret, _opts.WebhookSecretToken, StringComparison.Ordinal))
-        {
-            return Unauthorized();
-        }
+        // var secret = Request.Headers["X-Telegram-Bot-Api-Secret-Token"].FirstOrDefault();
+        // if (!string.IsNullOrEmpty(_opts.WebhookSecretToken) &&
+        //     !string.Equals(secret, _opts.WebhookSecretToken, StringComparison.Ordinal))
+        // {
+        //     return Unauthorized();
+        // }
 
         var msg = update.Message;
         if (msg?.Text is null)
