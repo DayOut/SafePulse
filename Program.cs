@@ -6,6 +6,7 @@ using HeartPulse.Data;
 using HeartPulse.Filters;
 using HeartPulse.Formatters;
 using HeartPulse.Formatters.Interfaces;
+using HeartPulse.Models;
 using HeartPulse.Notifiers;
 using HeartPulse.Notifiers.Builders;
 using HeartPulse.Notifiers.Interfaces;
@@ -74,6 +75,12 @@ using (var scope = app.Services.CreateScope())
 {
     var db = scope.ServiceProvider.GetRequiredService<IMongoDatabase>();
     await MongoIndexConfigurator.ConfigureAsync(db);
+
+    var users = db.GetCollection<AppUser>("users");
+    await users.Find(Builders<AppUser>.Filter.Ne(x => x.IsDeleted, true))
+        .Sort(Builders<AppUser>.Sort.Descending(x => x.LastActiveAt))
+        .Limit(1)
+        .ToListAsync();
 }
 
 app.MapOpenApi();

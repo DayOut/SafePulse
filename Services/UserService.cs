@@ -2,11 +2,14 @@ using HeartPulse.Data;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 
 namespace HeartPulse.Services;
 
-public class UserService(SafePulseContext db) : IUserService
+public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IUserService
 {
+    private readonly IMongoCollection<AppUser> _users = mongoDatabase.GetCollection<AppUser>("users");
+
     public async Task<AppUser> GetOrCreateAsync(
         string userId,
         string userName,
@@ -14,7 +17,7 @@ public class UserService(SafePulseContext db) : IUserService
         CancellationToken ct)
     {
         var user = await db.Users.FindAsync(new object?[] { userId }, ct);
-        if (user is not null && !user.IsDeleted)
+        if (user is not null && user.IsDeleted != true)
             return user;
 
         if (user is null)
@@ -43,28 +46,34 @@ public class UserService(SafePulseContext db) : IUserService
     public async Task<AppUser?> GetAsync(string userId, string userName, long chatId, CancellationToken ct)
     {
         return await db.Users
-            .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, ct);
+            .FirstOrDefaultAsync(u => u.Id == userId && u.IsDeleted != true, ct);
     }
 
     public async Task<IReadOnlyList<AppUser>> GetAllAsync(CancellationToken ct)
     {
-        return await db.Users
-            .Where(u => !u.IsDeleted)
-            .OrderByDescending(u => u.LastActiveAt)
+        var filter = Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true);
+        var sort = Builders<AppUser>.Sort.Descending(u => u.LastActiveAt);
+
+        return await _users.Find(filter)
+            .Sort(sort)
             .ToListAsync(ct);
     }
 
     public async Task<AppUser?> GetByIdAsync(string userId, CancellationToken ct)
     {
-        return await db.Users
-            .FirstOrDefaultAsync(u => u.Id == userId && !u.IsDeleted, ct);
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        return await _users.Find(filter)
+            .FirstOrDefaultAsync(ct);
     }
 
     public async Task<AppUser> CreateAsync(string? id, string userName, long? chatId, UserStatus status, CancellationToken ct)
     {
         var userId = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id.Trim();
         var existing = await db.Users.FindAsync(new object?[] { userId }, ct);
-        if (existing is not null && !existing.IsDeleted)
+        if (existing is not null && existing.IsDeleted != true)
             throw new InvalidOperationException("User already exists");
 
         var now = DateTime.UtcNow;
@@ -119,7 +128,7 @@ public class UserService(SafePulseContext db) : IUserService
         user.UpdatedAt = DateTime.UtcNow;
 
         var memberships = await db.GroupUsers
-            .Where(gu => gu.UserId == userId && !gu.IsDeleted)
+            .Where(gu => gu.UserId == userId && gu.IsDeleted != true)
             .ToListAsync(ct);
 
         foreach (var membership in memberships)

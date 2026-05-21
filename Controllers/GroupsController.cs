@@ -204,8 +204,8 @@ public class GroupsController(IGroupService groupService, IUserService userServi
         Id = group.Id,
         Name = group.Name,
         OwnerId = group.OwnerId,
-        CreatedAt = group.CreatedAt,
-        UpdatedAt = group.UpdatedAt
+        CreatedAt = group.CreatedAt ?? group.UpdatedAt ?? DateTime.MinValue,
+        UpdatedAt = group.UpdatedAt ?? group.CreatedAt ?? DateTime.MinValue
     };
 
     private static GroupMemberDto ToMemberDto(AppUser user) => new()

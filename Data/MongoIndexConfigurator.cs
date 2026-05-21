@@ -27,8 +27,20 @@ public static class MongoIndexConfigurator
             Name = "idx_users_telegram_chatid_unique"
         };
 
-        var model = new CreateIndexModel<AppUser>(keys, options);
-        await collection.Indexes.CreateOneAsync(model);
+        var indexes = new List<CreateIndexModel<AppUser>>
+        {
+            new(keys, options),
+            new(
+                Builders<AppUser>.IndexKeys
+                    .Ascending(x => x.IsDeleted)
+                    .Descending(x => x.LastActiveAt),
+                new CreateIndexOptions
+                {
+                    Name = "idx_users_active_lastActiveAt"
+                })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes);
     }
     private static async Task ConfigureGroupIndexesAsync(IMongoDatabase db)
     {
@@ -38,11 +50,9 @@ public static class MongoIndexConfigurator
         {
             new(
                 Builders<Group>.IndexKeys.Ascending(x => x.Name),
-                new CreateIndexOptions<Group>
+                new CreateIndexOptions
                 {
-                    Unique = true,
-                    Name = "idx_groups_name_active_unique",
-                    PartialFilterExpression = Builders<Group>.Filter.Eq(x => x.IsDeleted, false)
+                    Name = "idx_groups_name"
                 }),
             new(
                 Builders<Group>.IndexKeys.Ascending(x => x.OwnerId),
@@ -65,11 +75,9 @@ public static class MongoIndexConfigurator
             Builders<GroupUser>.IndexKeys
                 .Ascending(x => x.UserId)
                 .Ascending(x => x.GroupId),
-            new CreateIndexOptions<GroupUser>
+            new CreateIndexOptions
             {
-                Unique = true,
-                Name = "idx_userId_groupId_active_unique",
-                PartialFilterExpression = Builders<GroupUser>.Filter.Eq(x => x.IsDeleted, false)
+                Name = "idx_userId_groupId"
             }));
         
         indexes.Add(new CreateIndexModel<GroupUser>(

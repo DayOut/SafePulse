@@ -80,7 +80,7 @@ public class UsersController(IUserService userService) : ControllerBase
         ChatId = user.ChatId,
         Status = user.Status.ToString(),
         LastActiveAt = user.LastActiveAt,
-        CreatedAt = user.CreatedAt,
-        UpdatedAt = user.UpdatedAt
+        CreatedAt = user.CreatedAt ?? user.LastActiveAt,
+        UpdatedAt = user.UpdatedAt ?? user.LastActiveAt
     };
 }

@@ -10,7 +10,7 @@ public class Group
     public string Id { get; set; } = default!;
     public string Name { get; set; } = default!;
     public string OwnerId { get; set; } = default!;
-    public bool IsDeleted { get; set; }
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime UpdatedAt { get; set; } = DateTime.UtcNow;
+    public bool? IsDeleted { get; set; }
+    public DateTime? CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }

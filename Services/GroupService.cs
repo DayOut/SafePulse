@@ -11,7 +11,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<IReadOnlyList<Group>> GetUserGroupsAsync(string userId, CancellationToken ct)
     {
         var groupIds = await db.GroupUsers
-            .Where(gu => gu.UserId == userId && !gu.IsDeleted)
+            .Where(gu => gu.UserId == userId && gu.IsDeleted != true)
             .Select(gu => gu.GroupId)
             .ToListAsync(ct); // Possible another implementation. From mongo not Entity framework
 
@@ -19,7 +19,7 @@ public class GroupService(SafePulseContext db) : IGroupService
             return Array.Empty<Group>();
 
         var groups = await db.Groups
-            .Where(g => groupIds.Contains(g.Id) && !g.IsDeleted)
+            .Where(g => groupIds.Contains(g.Id) && g.IsDeleted != true)
             .ToListAsync(ct);
 
         return groups;
@@ -28,7 +28,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<IReadOnlyList<Group>> GetOwnedGroupsAsync(string ownerId, CancellationToken ct)
     {
         return await db.Groups
-            .Where(g => g.OwnerId == ownerId && !g.IsDeleted)
+            .Where(g => g.OwnerId == ownerId && g.IsDeleted != true)
             .OrderBy(g => g.Name)
             .ToListAsync(ct);
     }
@@ -36,13 +36,13 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<Group?> GetByIdAsync(string groupId, CancellationToken ct)
     {
         return await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && !g.IsDeleted, ct);
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.IsDeleted != true, ct);
     }
 
     public async Task<IReadOnlyList<AppUser>> GetGroupUsersAsync(string groupId, CancellationToken ct)
     {
         var userIds = await db.GroupUsers
-            .Where(gu => gu.GroupId == groupId && !gu.IsDeleted)
+            .Where(gu => gu.GroupId == groupId && gu.IsDeleted != true)
             .Select(gu => gu.UserId)
             .ToListAsync(ct);
 
@@ -50,27 +50,27 @@ public class GroupService(SafePulseContext db) : IGroupService
             return Array.Empty<AppUser>();
 
         return await db.Users
-            .Where(u => userIds.Contains(u.Id) && !u.IsDeleted)
+            .Where(u => userIds.Contains(u.Id) && u.IsDeleted != true)
             .OrderByDescending(u => u.LastActiveAt)
             .ToListAsync(ct);
     }
 
     public async Task<bool> IsGroupNameExistAsync(string groupName, CancellationToken ct)
     {
-        var group = await db.Groups.FirstOrDefaultAsync(g => g.Name == groupName && !g.IsDeleted, ct);
+        var group = await db.Groups.FirstOrDefaultAsync(g => g.Name == groupName && g.IsDeleted != true, ct);
         return group is not null;
     }
 
     public async Task<bool> IsGroupIdExistAsync(string groupId, CancellationToken ct)
     {
-        var group = await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId && !g.IsDeleted, ct);
+        var group = await db.Groups.FirstOrDefaultAsync(g => g.Id == groupId && g.IsDeleted != true, ct);
         return group is not null;
     }
 
     public async Task<Group> CreateAsync(string ownerId, string name, CancellationToken ct)
     {
         var groupName = name.Trim();
-        var group = await db.Groups.FirstOrDefaultAsync(g => g.Name == groupName && !g.IsDeleted, ct);
+        var group = await db.Groups.FirstOrDefaultAsync(g => g.Name == groupName && g.IsDeleted != true, ct);
         if (group is not null)
             throw new Exception("Group already exists");
 
@@ -92,7 +92,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<Group?> UpdateAsync(string groupId, string ownerId, string? name, CancellationToken ct)
     {
         var group = await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && !g.IsDeleted, ct);
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
         if (group is null)
             return null;
 
@@ -100,7 +100,7 @@ public class GroupService(SafePulseContext db) : IGroupService
         {
             var trimmedName = name.Trim();
             var nameExists = await db.Groups
-                .AnyAsync(g => g.Id != groupId && g.Name == trimmedName && !g.IsDeleted, ct);
+                .AnyAsync(g => g.Id != groupId && g.Name == trimmedName && g.IsDeleted != true, ct);
             if (nameExists)
                 throw new InvalidOperationException("Group already exists");
 
@@ -115,7 +115,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<bool> SoftDeleteAsync(string groupId, string ownerId, CancellationToken ct)
     {
         var group = await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && !g.IsDeleted, ct);
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
         if (group is null)
             return false;
 
@@ -124,7 +124,7 @@ public class GroupService(SafePulseContext db) : IGroupService
         group.UpdatedAt = now;
 
         var memberships = await db.GroupUsers
-            .Where(gu => gu.GroupId == groupId && !gu.IsDeleted)
+            .Where(gu => gu.GroupId == groupId && gu.IsDeleted != true)
             .ToListAsync(ct);
 
         foreach (var membership in memberships)
@@ -168,7 +168,7 @@ public class GroupService(SafePulseContext db) : IGroupService
             return;
         }
 
-        if (!membership.IsDeleted)
+        if (membership.IsDeleted != true)
             return;
 
         membership.IsDeleted = false;
@@ -179,12 +179,12 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<bool> RemoveUserFromGroupAsync(string groupId, string ownerId, string userId, CancellationToken ct)
     {
         var group = await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && !g.IsDeleted, ct);
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
         if (group is null)
             return false;
 
         var membership = await db.GroupUsers
-            .FirstOrDefaultAsync(gu => gu.GroupId == groupId && gu.UserId == userId && !gu.IsDeleted, ct);
+            .FirstOrDefaultAsync(gu => gu.GroupId == groupId && gu.UserId == userId && gu.IsDeleted != true, ct);
         if (membership is null)
             return false;
 
@@ -197,7 +197,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<GroupInvite> CreateInviteAsync(string groupId, string ownerId, string? note, CancellationToken ct)
     {
         var group = await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && !g.IsDeleted, ct);
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
         if (group is null)
             throw new InvalidOperationException("Group not found");
 
@@ -219,7 +219,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<IReadOnlyList<GroupInvite>> GetInvitesAsync(string groupId, string ownerId, CancellationToken ct)
     {
         var ownsGroup = await db.Groups
-            .AnyAsync(g => g.Id == groupId && g.OwnerId == ownerId && !g.IsDeleted, ct);
+            .AnyAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
         if (!ownsGroup)
             return Array.Empty<GroupInvite>();
 
@@ -232,7 +232,7 @@ public class GroupService(SafePulseContext db) : IGroupService
     public async Task<bool> RevokeInviteAsync(string groupId, string ownerId, string inviteId, CancellationToken ct)
     {
         var ownsGroup = await db.Groups
-            .AnyAsync(g => g.Id == groupId && g.OwnerId == ownerId && !g.IsDeleted, ct);
+            .AnyAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
         if (!ownsGroup)
             return false;
 
