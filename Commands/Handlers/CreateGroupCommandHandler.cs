@@ -46,7 +46,7 @@ public class CreateGroupCommandHandler(
         
         await groupNotifier.SendMessageAsync(sb.ToString(), context.User, ct);
         sb.Clear();
-        sb.Append($"<a href=\"{inviteLink}\">asd</a>");
+        sb.Append($"Вас запросили в групу \"{group.Name}\" додатку SafePulse. \n<a href=\"{inviteLink}\">Приєднатись</a>");
         await groupNotifier.SendMessageAsync(sb.ToString(), context.User, ct);
         
         return new TelegramCommandResult(inviteLink);
