@@ -5,3 +5,6 @@
 *.development.json
 /*.log
 *.user
+web/node_modules/
+web/dist/
+web/*.log
