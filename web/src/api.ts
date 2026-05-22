@@ -223,6 +223,12 @@ export function createGroup(settings: AppSettings, accessToken: string, name: st
   });
 }
 
+export function deleteGroup(settings: AppSettings, accessToken: string, groupId: string) {
+  return request<void>(settings, `/api/groups/${encodeURIComponent(groupId)}`, accessToken, {
+    method: "DELETE",
+  });
+}
+
 export function getGroupMembers(settings: AppSettings, accessToken: string, groupId: string) {
   return request<GroupMemberDto[]>(settings, `/api/groups/${encodeURIComponent(groupId)}/users`, accessToken);
 }

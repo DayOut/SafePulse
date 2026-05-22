@@ -32,6 +32,7 @@ import {
   createGroup,
   createInvite,
   createTelegramLinkCode,
+  deleteGroup,
   devLogin,
   getCurrentUser,
   getMyGroups,
@@ -682,6 +683,7 @@ function GroupsPage({
   const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isJoinModalOpen, setJoinModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MyGroupDto | null>(null);
 
   const groups = useQuery({
     queryKey: ["my-groups", settings, accessToken],
@@ -740,6 +742,15 @@ function GroupsPage({
     },
   });
 
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: string) => deleteGroup(settings, accessToken, groupId),
+    onSuccess: async (_, groupId) => {
+      setDeleteTarget(null);
+      setSelectedGroupId((current) => current === groupId ? null : current);
+      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+    },
+  });
+
   function submitGroup(event: FormEvent) {
     event.preventDefault();
     if (groupName.trim())
@@ -794,6 +805,7 @@ function GroupsPage({
             onRemoveMember={(userId) => removeMemberMutation.mutate(userId)}
             onUpdateRole={(userId, role) => updateRoleMutation.mutate({ userId, role })}
             onAddMember={(userId) => addMemberMutation.mutate(userId)}
+            onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
             memberActionError={addMemberMutation.error?.message ?? removeMemberMutation.error?.message ?? updateRoleMutation.error?.message}
           />
         ) : (
@@ -827,6 +839,16 @@ function GroupsPage({
           />
         </Modal>
       )}
+
+      {deleteTarget && (
+        <DeleteGroupModal
+          group={deleteTarget}
+          error={deleteGroupMutation.error?.message}
+          isDeleting={deleteGroupMutation.isPending}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => deleteGroupMutation.mutate(deleteTarget.Id)}
+        />
+      )}
     </section>
   );
 }
@@ -847,6 +869,7 @@ function GroupDetails({
   onRemoveMember,
   onUpdateRole,
   onAddMember,
+  onDeleteGroup,
   memberActionError,
 }: {
   group: MyGroupDto;
@@ -864,6 +887,7 @@ function GroupDetails({
   onRemoveMember: (userId: string) => void;
   onUpdateRole: (userId: string, role: "Member" | "Admin") => void;
   onAddMember: (userId: string) => void;
+  onDeleteGroup?: () => void;
   memberActionError?: string;
 }) {
   const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
@@ -884,7 +908,14 @@ function GroupDetails({
     <div>
       <div className="group-detail-header mb-4">
         <div>
-          <h2 className="text-lg font-semibold">{group.Name}</h2>
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-lg font-semibold">{group.Name}</h2>
+            {onDeleteGroup && (
+              <button className="icon-button compact danger" onClick={onDeleteGroup} title="Delete group" type="button">
+                <Trash2 className="h-4 w-4" />
+              </button>
+            )}
+          </div>
           <p className="text-sm text-neutral-400">Owner: {group.OwnerId}</p>
         </div>
         <div className="group-actions">
@@ -944,6 +975,51 @@ function GroupDetails({
         {filteredMembers.length === 0 && <p className="px-3 py-4 text-sm text-neutral-400">No users with this status.</p>}
       </div>
     </div>
+  );
+}
+
+function DeleteGroupModal({
+  group,
+  isDeleting,
+  error,
+  onClose,
+  onConfirm,
+}: {
+  group: MyGroupDto;
+  isDeleting: boolean;
+  error?: string;
+  onClose: () => void;
+  onConfirm: () => void;
+}) {
+  const [confirmation, setConfirmation] = useState("");
+  const canDelete = confirmation === group.Name;
+
+  return (
+    <Modal title="Delete group" onClose={onClose}>
+      <div className="grid gap-4">
+        <p className="text-sm text-neutral-300">
+          This will delete the group, remove active memberships, and revoke active invites.
+        </p>
+        <label className="label">
+          Type <span className="font-mono text-neutral-100">{group.Name}</span> to confirm
+          <input className="field" autoFocus onChange={(event) => setConfirmation(event.target.value)} value={confirmation} />
+        </label>
+        {error && <p className="rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{error}</p>}
+        <div className="flex flex-wrap justify-end gap-2">
+          <button className="rounded-md border border-neutral-700 px-3 py-2 text-sm" onClick={onClose} type="button">
+            Cancel
+          </button>
+          <button
+            className="rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm font-semibold text-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+            disabled={!canDelete || isDeleting}
+            onClick={onConfirm}
+            type="button"
+          >
+            {isDeleting ? "Deleting..." : "Delete group"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
