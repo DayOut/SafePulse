@@ -93,8 +93,9 @@ public class TelegramLinkService(IMongoDatabase database) : ITelegramLinkService
         CancellationToken ct)
     {
         var telegramSourceId = telegramUser?.Id;
+        var hasSeparateTelegramUser = !string.IsNullOrWhiteSpace(telegramSourceId) && telegramSourceId != webUser.Id;
 
-        if (telegramUser is not null && telegramUser.Id != webUser.Id)
+        if (telegramUser is not null && hasSeparateTelegramUser)
         {
             if (telegramUser.LastActiveAt > webUser.LastActiveAt)
                 webUser.Status = telegramUser.Status;
@@ -107,13 +108,24 @@ public class TelegramLinkService(IMongoDatabase database) : ITelegramLinkService
                 .ToList();
         }
 
+        if (hasSeparateTelegramUser)
+        {
+            await _users.UpdateOneAsync(
+                u => u.Id == telegramSourceId,
+                Builders<AppUser>.Update
+                    .Unset(u => u.ChatId)
+                    .Unset(u => u.TelegramUserId)
+                    .Set(u => u.UpdatedAt, now),
+                cancellationToken: ct);
+        }
+
         webUser.TelegramUserId = telegramUserId;
         webUser.ChatId = chatId;
         webUser.LastSeenOnlineAt = MaxNullable(webUser.LastSeenOnlineAt, now);
         webUser.UpdatedAt = now;
         await _users.ReplaceOneAsync(u => u.Id == webUser.Id, webUser, cancellationToken: ct);
 
-        if (string.IsNullOrWhiteSpace(telegramSourceId) || telegramSourceId == webUser.Id)
+        if (!hasSeparateTelegramUser)
             return;
 
         var telegramMemberships = await _groupUsers.Find(gu => gu.UserId == telegramSourceId && gu.IsDeleted != true)
@@ -155,9 +167,7 @@ public class TelegramLinkService(IMongoDatabase database) : ITelegramLinkService
             u => u.Id == telegramSourceId,
             Builders<AppUser>.Update
                 .Set(u => u.IsDeleted, true)
-                .Set(u => u.UpdatedAt, now)
-                .Set(u => u.ChatId, null)
-                .Set(u => u.TelegramUserId, null),
+                .Set(u => u.UpdatedAt, now),
             cancellationToken: ct);
     }
 
