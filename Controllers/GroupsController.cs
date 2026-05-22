@@ -1,20 +1,32 @@
 using HeartPulse.DTOs;
+using HeartPulse.Hubs;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
+using MongoDB.Driver;
+using Telegram.Bot;
 
 namespace HeartPulse.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/groups")]
-public class GroupsController(IGroupService groupService, IUserService userService) : ControllerBase
+public class GroupsController(
+    IGroupService groupService,
+    IUserService userService,
+    IMongoDatabase database,
+    IHubContext<StatusHub> statusHub,
+    ITelegramBotClient bot,
+    ILogger<GroupsController> logger) : ControllerBase
 {
     [HttpPost]
     public async Task<ActionResult<GroupDto>> Create([FromBody] CreateGroupRequest request, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         if (string.IsNullOrWhiteSpace(request.Name))
             return BadRequest("Group name is required");
@@ -42,9 +54,9 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpGet]
     public async Task<ActionResult<IEnumerable<GroupDto>>> GetOwned(CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var groups = await groupService.GetOwnedGroupsAsync(ownerId, ct);
         return Ok(groups.Select(ToDto));
@@ -53,15 +65,15 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpGet("{groupId}")]
     public async Task<ActionResult<GroupDto>> GetById(string groupId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var group = await groupService.GetByIdAsync(groupId, ct);
         if (group is null)
             return NotFound();
 
-        if (group.OwnerId != ownerId)
+        if (group.OwnerId != ownerId && !await groupService.IsUserInGroupAsync(groupId, ownerId, ct))
             return StatusCode(StatusCodes.Status403Forbidden);
 
         return Ok(ToDto(group));
@@ -70,9 +82,9 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpPatch("{groupId}")]
     public async Task<ActionResult<GroupDto>> Update(string groupId, [FromBody] UpdateGroupRequest request, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         try
         {
@@ -88,9 +100,9 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpDelete("{groupId}")]
     public async Task<IActionResult> Delete(string groupId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var deleted = await groupService.SoftDeleteAsync(groupId, ownerId, ct);
         return deleted ? NoContent() : NotFound();
@@ -99,33 +111,34 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpGet("{groupId}/users")]
     public async Task<ActionResult<IEnumerable<GroupMemberDto>>> GetGroupUsers(string groupId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var group = await groupService.GetByIdAsync(groupId, ct);
         if (group is null)
             return NotFound();
 
-        if (group.OwnerId != ownerId)
+        if (group.OwnerId != ownerId && !await groupService.IsUserInGroupAsync(groupId, ownerId, ct))
             return StatusCode(StatusCodes.Status403Forbidden);
 
-        var users = await groupService.GetGroupUsersAsync(groupId, ct);
-        return Ok(users.Select(ToMemberDto));
+        var members = await groupService.GetGroupMembersAsync(groupId, ct);
+        var managerCanManage = await groupService.CanManageMembersAsync(groupId, ownerId, ct);
+        return Ok(members.Select(member => ToMemberDto(member, group, ownerId, managerCanManage)));
     }
 
     [HttpPost("{groupId}/users/{userId}")]
     public async Task<IActionResult> AddUserToGroup(string groupId, string userId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var group = await groupService.GetByIdAsync(groupId, ct);
         if (group is null)
             return NotFound("Group was not found");
 
-        if (group.OwnerId != ownerId)
+        if (!await groupService.CanManageMembersAsync(groupId, ownerId, ct))
             return StatusCode(StatusCodes.Status403Forbidden);
 
         var user = await userService.GetByIdAsync(userId, ct);
@@ -139,20 +152,104 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpDelete("{groupId}/users/{userId}")]
     public async Task<IActionResult> RemoveUserFromGroup(string groupId, string userId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var removed = await groupService.RemoveUserFromGroupAsync(groupId, ownerId, userId, ct);
         return removed ? NoContent() : NotFound();
     }
 
+    [HttpPatch("{groupId}/users/{userId}/role")]
+    public async Task<IActionResult> UpdateUserRole(string groupId, string userId, [FromBody] UpdateGroupMemberRoleRequest request, CancellationToken ct)
+    {
+        var ownerId = User.GetUserId();
+        if (ownerId is null)
+            return Unauthorized();
+
+        try
+        {
+            var updated = await groupService.UpdateMemberRoleAsync(groupId, ownerId, userId, request.Role, ct);
+            return updated ? NoContent() : NotFound();
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+    }
+
+    [HttpPost("{groupId}/status-requests")]
+    public async Task<ActionResult<GroupStatusRequestedDto>> RequestStatusUpdate(string groupId, CancellationToken ct)
+    {
+        var requesterId = User.GetUserId();
+        if (requesterId is null)
+            return Unauthorized();
+
+        var group = await groupService.GetByIdAsync(groupId, ct);
+        if (group is null)
+            return NotFound();
+
+        if (group.OwnerId != requesterId && !await groupService.IsUserInGroupAsync(groupId, requesterId, ct))
+            return StatusCode(StatusCodes.Status403Forbidden);
+
+        var now = DateTime.UtcNow;
+        var requests = database.GetCollection<GroupStatusRequest>("groupStatusRequests");
+        var latest = await requests.Find(r => r.GroupId == groupId)
+            .SortByDescending(r => r.CreatedAt)
+            .FirstOrDefaultAsync(ct);
+
+        if (latest is not null && latest.CreatedAt > now.AddMinutes(-1))
+        {
+            var retryAfterSeconds = Math.Max(1, 60 - (int)(now - latest.CreatedAt).TotalSeconds);
+            Response.Headers["Retry-After"] = retryAfterSeconds.ToString();
+            return StatusCode(StatusCodes.Status429TooManyRequests, new { RetryAfterSeconds = retryAfterSeconds });
+        }
+
+        var requester = await userService.GetByIdAsync(requesterId, ct);
+        if (requester is null)
+            return NotFound("Requester was not found");
+
+        var request = new GroupStatusRequest
+        {
+            Id = Guid.NewGuid().ToString(),
+            GroupId = group.Id,
+            RequestedByUserId = requester.Id,
+            RequestedByUserName = requester.UserName,
+            CreatedAt = now
+        };
+
+        await requests.InsertOneAsync(request, cancellationToken: ct);
+
+        var dto = new GroupStatusRequestedDto
+        {
+            Id = request.Id,
+            GroupId = group.Id,
+            GroupName = group.Name,
+            RequestedByUserId = requester.Id,
+            RequestedByUserName = requester.UserName,
+            CreatedAt = request.CreatedAt
+        };
+
+        await statusHub.Clients.Group(group.Id).SendAsync("groupStatusRequested", dto, ct);
+
+        var members = await groupService.GetGroupMembersAsync(group.Id, ct);
+        var chatIds = members
+            .Select(member => member.User.ChatId)
+            .Where(chatId => chatId.HasValue)
+            .Select(chatId => chatId!.Value)
+            .Distinct()
+            .ToList();
+        _ = NotifyTelegramStatusRequestAsync(chatIds, group.Name, requester.UserName);
+
+        return Ok(dto);
+    }
+
     [HttpPost("{groupId}/invites")]
     public async Task<ActionResult<InviteDto>> CreateInvite(string groupId, [FromBody] CreateInviteRequest request, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         try
         {
@@ -168,9 +265,9 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpGet("{groupId}/invites")]
     public async Task<ActionResult<IEnumerable<InviteDto>>> GetInvites(string groupId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var group = await groupService.GetByIdAsync(groupId, ct);
         if (group is null)
@@ -186,17 +283,12 @@ public class GroupsController(IGroupService groupService, IUserService userServi
     [HttpDelete("{groupId}/invites/{inviteId}")]
     public async Task<IActionResult> RevokeInvite(string groupId, string inviteId, CancellationToken ct)
     {
-        var ownerId = GetActorUserId();
+        var ownerId = User.GetUserId();
         if (ownerId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var revoked = await groupService.RevokeInviteAsync(groupId, ownerId, inviteId, ct);
         return revoked ? NoContent() : NotFound();
-    }
-
-    private string? GetActorUserId()
-    {
-        return Request.Headers["X-User-Id"].FirstOrDefault();
     }
 
     private static GroupDto ToDto(Group group) => new()
@@ -208,12 +300,16 @@ public class GroupsController(IGroupService groupService, IUserService userServi
         UpdatedAt = group.UpdatedAt ?? group.CreatedAt ?? DateTime.MinValue
     };
 
-    private static GroupMemberDto ToMemberDto(AppUser user) => new()
+    private static GroupMemberDto ToMemberDto(GroupMemberInfo member, Group group, string managerId, bool managerCanManage) => new()
     {
-        Id = user.Id,
-        UserName = user.UserName,
-        Status = user.Status.ToString(),
-        LastActiveAt = user.LastActiveAt
+        Id = member.User.Id,
+        UserName = member.User.UserName,
+        Status = member.User.Status.ToString(),
+        Role = member.Role,
+        CanManage = member.User.Id != group.OwnerId &&
+            (group.OwnerId == managerId || (managerCanManage && member.Role == GroupUserRole.Member)),
+        LastActiveAt = member.User.LastActiveAt,
+        LastSeenOnlineAt = member.User.LastSeenOnlineAt ?? member.User.LastActiveAt
     };
 
     private InviteDto ToInviteDto(GroupInvite invite) => new()
@@ -228,4 +324,22 @@ public class GroupsController(IGroupService groupService, IUserService userServi
         TelegramUrl = $"https://t.me/{TelegramController.BotUsername}?start=join_{invite.Token}",
         ApiUrl = $"{Request.Scheme}://{Request.Host}/api/invites/{invite.Token}"
     };
+
+    private async Task NotifyTelegramStatusRequestAsync(IReadOnlyList<long> chatIds, string groupName, string requesterName)
+    {
+        foreach (var chatId in chatIds)
+        {
+            try
+            {
+                await bot.SendMessage(
+                    chatId,
+                    $"{requesterName} просить оновити статус у групі {groupName}.",
+                    replyMarkup: TelegramController.StatusKeyboard);
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to send group status request notification to Telegram chat {ChatId}", chatId);
+            }
+        }
+    }
 }

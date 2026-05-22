@@ -1,14 +1,17 @@
 using HeartPulse.DTOs;
 using HeartPulse.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace HeartPulse.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/invites")]
 public class InvitesController(IGroupService groupService, IUserService userService) : ControllerBase
 {
     [HttpGet("{token}")]
+    [AllowAnonymous]
     public async Task<ActionResult<InvitePreviewDto>> Resolve(string token, CancellationToken ct)
     {
         var invite = await groupService.GetInviteByTokenAsync(token, ct);
@@ -31,9 +34,9 @@ public class InvitesController(IGroupService groupService, IUserService userServ
     [HttpPost("{token}/accept")]
     public async Task<IActionResult> Accept(string token, CancellationToken ct)
     {
-        var userId = Request.Headers["X-User-Id"].FirstOrDefault();
+        var userId = User.GetUserId();
         if (userId is null)
-            return Unauthorized("X-User-Id header is required");
+            return Unauthorized();
 
         var invite = await groupService.GetInviteByTokenAsync(token, ct);
         if (invite is null)

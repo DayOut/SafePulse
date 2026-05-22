@@ -10,6 +10,8 @@ public interface IUserService
     Task<AppUser?> GetByIdAsync(string userId, CancellationToken ct);
     Task<AppUser> CreateAsync(string? id, string userName, long? chatId, UserStatus status, CancellationToken ct);
     Task<AppUser?> UpdateAsync(string userId, string? userName, long? chatId, UserStatus? status, CancellationToken ct);
+    Task<AppUser?> UpdateStatusAsync(string userId, UserStatus status, CancellationToken ct);
+    Task<AppUser?> TouchLastSeenOnlineAsync(string userId, CancellationToken ct);
     Task<bool> SoftDeleteAsync(string userId, CancellationToken ct);
     Task UpdateStatusAsync(AppUser user, UserStatus status, CancellationToken ct);
 }

@@ -33,9 +33,11 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
 
         user.UserName = userName;
         user.LastActiveAt = DateTime.UtcNow;
+        user.LastSeenOnlineAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
         user.Status = UserStatus.Unknown;
         user.ChatId = chatId;
+        user.TelegramUserId = userId;
         user.IsDeleted = false;
 
         await db.SaveChangesAsync(ct);
@@ -87,6 +89,7 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
         user.ChatId = chatId;
         user.Status = status;
         user.LastActiveAt = now;
+        user.LastSeenOnlineAt = now;
         user.UpdatedAt = now;
         user.IsDeleted = false;
 
@@ -100,8 +103,8 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
 
     public async Task<AppUser?> UpdateAsync(string userId, string? userName, long? chatId, UserStatus? status, CancellationToken ct)
     {
-        var user = await GetByIdAsync(userId, ct);
-        if (user is null)
+        var user = await db.Users.FindAsync(new object?[] { userId }, ct);
+        if (user is null || user.IsDeleted == true)
             return null;
 
         if (!string.IsNullOrWhiteSpace(userName))
@@ -118,10 +121,54 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
         return user;
     }
 
+    public async Task<AppUser?> UpdateStatusAsync(string userId, UserStatus status, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.Status, status)
+            .Set(u => u.LastActiveAt, now)
+            .Set(u => u.LastSeenOnlineAt, now)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
+    public async Task<AppUser?> TouchLastSeenOnlineAsync(string userId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.LastSeenOnlineAt, now)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
     public async Task<bool> SoftDeleteAsync(string userId, CancellationToken ct)
     {
-        var user = await GetByIdAsync(userId, ct);
-        if (user is null)
+        var user = await db.Users.FindAsync(new object?[] { userId }, ct);
+        if (user is null || user.IsDeleted == true)
             return false;
 
         user.IsDeleted = true;
@@ -145,6 +192,7 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
     {
         user.Status = status;
         user.LastActiveAt = DateTime.UtcNow;
+        user.LastSeenOnlineAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
     }

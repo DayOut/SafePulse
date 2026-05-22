@@ -1,11 +1,13 @@
 using HeartPulse.Commands;
 using HeartPulse.Commands.Handlers;
 using HeartPulse.Commands.Interfaces;
+using System.Text;
+using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
 using HeartPulse.Data;
-using HeartPulse.Filters;
 using HeartPulse.Formatters;
 using HeartPulse.Formatters.Interfaces;
+using HeartPulse.Hubs;
 using HeartPulse.Models;
 using HeartPulse.Notifiers;
 using HeartPulse.Notifiers.Builders;
@@ -16,10 +18,13 @@ using HeartPulse.Services.Interfaces;
 using MongoDB.Driver;
 using Scalar.AspNetCore;
 using Telegram.Bot;
+using Microsoft.IdentityModel.Tokens;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection("Telegram"));
+builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
+builder.Services.Configure<FakeStatusSimulatorOptions>(builder.Configuration.GetSection("FakeStatusSimulator"));
 
 var mongoConn = builder.Configuration.GetValue<string>("Mongo:ConnectionString")!;
 var mongoDb = builder.Configuration.GetValue<string>("Mongo:Database") ?? "safepulse";
@@ -34,11 +39,58 @@ builder.Services.AddSingleton(sp =>
     return client.GetDatabase(mongoDb);
 });
 
-builder.Services.AddControllers(options => options.Filters.Add<ApiKeyAuthFilter>())
+builder.Services.AddControllers()
     .AddJsonOptions(o => o.JsonSerializerOptions.PropertyNamingPolicy = null);
 
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddOpenApi();
+builder.Services.AddSignalR();
+
+var auth = builder.Configuration.GetSection("Auth").Get<AuthOptions>() ?? new AuthOptions();
+if (string.IsNullOrWhiteSpace(auth.SigningKey))
+    throw new InvalidOperationException("Auth:SigningKey is not configured");
+
+builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
+    .AddJwtBearer(options =>
+    {
+        options.TokenValidationParameters = new TokenValidationParameters
+        {
+            ValidateIssuer = true,
+            ValidIssuer = auth.Issuer,
+            ValidateAudience = true,
+            ValidAudience = auth.Audience,
+            ValidateIssuerSigningKey = true,
+            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(auth.SigningKey)),
+            ValidateLifetime = true,
+            ClockSkew = TimeSpan.FromMinutes(1)
+        };
+
+        options.Events = new JwtBearerEvents
+        {
+            OnMessageReceived = context =>
+            {
+                var accessToken = context.Request.Query["access_token"];
+                var path = context.HttpContext.Request.Path;
+                if (!string.IsNullOrEmpty(accessToken) && path.StartsWithSegments("/hubs/status"))
+                    context.Token = accessToken;
+
+                return Task.CompletedTask;
+            }
+        };
+    });
+
+builder.Services.AddAuthorization();
+
+builder.Services.AddCors(options =>
+{
+    options.AddPolicy("WebUi", policy =>
+    {
+        policy.SetIsOriginAllowed(_ => true)
+            .AllowAnyHeader()
+            .AllowAnyMethod()
+            .AllowCredentials();
+    });
+});
 
 builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 {
@@ -49,10 +101,13 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 var services = builder.Services;
 services.AddScoped<IUserService, UserService>();
 services.AddScoped<IGroupService, GroupService>();
+services.AddScoped<IAuthService, AuthService>();
+services.AddScoped<ITelegramLinkService, TelegramLinkService>();
 services.AddScoped<IGroupNotificationBuilder, GroupNotificationBuilder>();
 services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();
 services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
 services.AddScoped<ITelegramCommandDispatcher, TelegramCommandDispatcher>();
+services.AddHostedService<FakeStatusSimulatorHostedService>();
 
 // Handlers
 services.AddScoped<ITelegramCommandHandler, SafeCommandHandler>();
@@ -63,6 +118,7 @@ services.AddScoped<ITelegramCommandHandler, ReferalListCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, StartCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, CreateGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, JoinGroupCommandHandler>();
+services.AddScoped<ITelegramCommandHandler, LinkTelegramCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, UnknownCommandHandler>();
 
 builder.Logging.ClearProviders();
@@ -86,6 +142,13 @@ using (var scope = app.Services.CreateScope())
 app.MapOpenApi();
 app.MapScalarApiReference();
 
+app.UseDefaultFiles();
+app.UseStaticFiles();
+app.UseCors("WebUi");
+app.UseAuthentication();
+app.UseAuthorization();
 app.MapControllers();
-app.MapGet("/", () => Results.Ok("SafePulse API is running"));
+app.MapHub<StatusHub>("/hubs/status");
+app.MapGet("/api/health", () => Results.Ok("SafePulse API is running"));
+app.MapFallbackToFile("index.html");
 app.Run();

@@ -14,3 +14,8 @@ public class UpdateUserRequest
     public long? ChatId { get; set; }
     public string? Status { get; set; }
 }
+
+public class UpdateUserStatusRequest
+{
+    public string Status { get; set; } = default!;
+}

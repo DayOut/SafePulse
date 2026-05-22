@@ -1,15 +1,24 @@
 using HeartPulse.DTOs;
+using HeartPulse.Hubs;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.SignalR;
 
 namespace HeartPulse.Controllers;
 
 [ApiController]
+[Authorize]
 [Route("api/users")]
-public class UsersController(IUserService userService) : ControllerBase
+public class UsersController(
+    IUserService userService,
+    IGroupService groupService,
+    IHubContext<StatusHub> statusHub,
+    ILogger<UsersController> logger) : ControllerBase
 {
     [HttpPost]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<UserDto>> Create([FromBody] CreateUserRequest request, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(request.UserName))
@@ -30,6 +39,7 @@ public class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpGet]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<IEnumerable<UserDto>>> GetAll(CancellationToken ct)
     {
         var users = await userService.GetAllAsync(ct);
@@ -37,6 +47,7 @@ public class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpGet("{userId}")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<UserDto>> GetById(string userId, CancellationToken ct)
     {
         var user = await userService.GetByIdAsync(userId, ct);
@@ -44,6 +55,7 @@ public class UsersController(IUserService userService) : ControllerBase
     }
 
     [HttpPatch("{userId}")]
+    [Authorize(Roles = "Admin")]
     public async Task<ActionResult<UserDto>> Update(string userId, [FromBody] UpdateUserRequest request, CancellationToken ct)
     {
         if (!TryParseStatus(request.Status, out var status))
@@ -53,7 +65,42 @@ public class UsersController(IUserService userService) : ControllerBase
         return user is null ? NotFound() : Ok(ToDto(user));
     }
 
+    [HttpPatch("{userId}/status")]
+    public async Task<ActionResult<UserDto>> UpdateStatus(string userId, [FromBody] UpdateUserStatusRequest request, CancellationToken ct)
+    {
+        var actorUserId = User.GetUserId();
+        if (string.IsNullOrWhiteSpace(actorUserId))
+            return Unauthorized();
+
+        if (!string.Equals(actorUserId, userId, StringComparison.Ordinal))
+            return StatusCode(StatusCodes.Status403Forbidden);
+
+        if (!TryParseStatus(request.Status, out var status) || status is null)
+            return BadRequest("Status is invalid");
+
+        var user = await userService.UpdateStatusAsync(userId, status.Value, ct);
+        if (user is null)
+            return NotFound();
+
+        var groupIds = await groupService.GetUserGroupIdsAsync(userId, ct);
+        var message = new StatusChangedDto
+        {
+            UserId = user.Id,
+            UserName = user.UserName,
+            Status = user.Status.ToString(),
+            LastActiveAt = user.LastActiveAt,
+            LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,
+            GroupIds = groupIds
+        };
+
+        if (groupIds.Count > 0)
+            _ = BroadcastStatusChangedAsync(statusHub, logger, groupIds, message);
+
+        return Ok(ToDto(user));
+    }
+
     [HttpDelete("{userId}")]
+    [Authorize(Roles = "Admin")]
     public async Task<IActionResult> Delete(string userId, CancellationToken ct)
     {
         var deleted = await userService.SoftDeleteAsync(userId, ct);
@@ -80,7 +127,25 @@ public class UsersController(IUserService userService) : ControllerBase
         ChatId = user.ChatId,
         Status = user.Status.ToString(),
         LastActiveAt = user.LastActiveAt,
+        LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,
         CreatedAt = user.CreatedAt ?? user.LastActiveAt,
         UpdatedAt = user.UpdatedAt ?? user.LastActiveAt
     };
+
+    private static async Task BroadcastStatusChangedAsync(
+        IHubContext<StatusHub> statusHub,
+        ILogger logger,
+        IReadOnlyList<string> groupIds,
+        StatusChangedDto message)
+    {
+        try
+        {
+            await statusHub.Clients.Groups(groupIds)
+                .SendAsync("statusChanged", message, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to broadcast status change for user {UserId}", message.UserId);
+        }
+    }
 }

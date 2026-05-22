@@ -4,6 +4,7 @@ using HeartPulse.DTOs;
 using HeartPulse.Models;
 using HeartPulse.Options;
 using HeartPulse.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
@@ -14,6 +15,7 @@ namespace HeartPulse.Controllers;
 
 
 [ApiController]
+[AllowAnonymous]
 [Route("api/telegram/webhook")]
 public class TelegramController(
     ITelegramBotClient bot,
@@ -81,7 +83,7 @@ public class TelegramController(
 
         var result = await dispatcher.DispatchAsync(context, ct);
 
-        var reply = result?.ReplyText ?? "Доступні команди: /safe, /help, /shelter, /group, /create <назва>, /join <ID_групи>";
+        var reply = result?.ReplyText ?? "Доступні команди: /safe, /help, /shelter, /group, /create <назва>, /join <ID_групи>, /link <код>";
 
         await bot.SendMessage(
             chatId,

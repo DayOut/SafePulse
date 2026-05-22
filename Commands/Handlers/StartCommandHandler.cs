@@ -23,7 +23,7 @@ public class StartCommandHandler(
         var sb = new StringBuilder();
         if (parts.Length < 2)
         {
-            return new TelegramCommandResult("Привіт! Я фіксую твій стан безпеки. Команди: /safe, /help, /shelter");
+            return new TelegramCommandResult("Привіт! Я фіксую твій стан безпеки. Команди: /safe, /help, /shelter, /group, /join <ID_групи>, /link <код>");
         }
         var groupName = parts[1];
         var group = await groupService.GetByJoinPayloadAsync(groupName, ct);

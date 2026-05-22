@@ -2,12 +2,15 @@ using HeartPulse.Data;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 using System.Security.Cryptography;
 
 namespace HeartPulse.Services;
 
-public class GroupService(SafePulseContext db) : IGroupService
+public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : IGroupService
 {
+    private readonly IMongoCollection<GroupUser> _groupUsers = mongoDatabase.GetCollection<GroupUser>("groupUsers");
+
     public async Task<IReadOnlyList<Group>> GetUserGroupsAsync(string userId, CancellationToken ct)
     {
         var groupIds = await db.GroupUsers
@@ -15,14 +18,23 @@ public class GroupService(SafePulseContext db) : IGroupService
             .Select(gu => gu.GroupId)
             .ToListAsync(ct); // Possible another implementation. From mongo not Entity framework
 
-        if (groupIds.Count == 0)
-            return Array.Empty<Group>();
-
+        var distinctGroupIds = groupIds.Distinct().ToList();
         var groups = await db.Groups
-            .Where(g => groupIds.Contains(g.Id) && g.IsDeleted != true)
+            .Where(g => (distinctGroupIds.Contains(g.Id) || g.OwnerId == userId) && g.IsDeleted != true)
             .ToListAsync(ct);
 
         return groups;
+    }
+
+    public async Task<IReadOnlyList<string>> GetUserGroupIdsAsync(string userId, CancellationToken ct)
+    {
+        var filter = Builders<GroupUser>.Filter.And(
+            Builders<GroupUser>.Filter.Eq(gu => gu.UserId, userId),
+            Builders<GroupUser>.Filter.Ne(gu => gu.IsDeleted, true));
+
+        return await _groupUsers.Find(filter)
+            .Project(gu => gu.GroupId)
+            .ToListAsync(ct);
     }
 
     public async Task<IReadOnlyList<Group>> GetOwnedGroupsAsync(string ownerId, CancellationToken ct)
@@ -41,18 +53,66 @@ public class GroupService(SafePulseContext db) : IGroupService
 
     public async Task<IReadOnlyList<AppUser>> GetGroupUsersAsync(string groupId, CancellationToken ct)
     {
-        var userIds = await db.GroupUsers
+        var members = await GetGroupMembersAsync(groupId, ct);
+        return members.Select(m => m.User).ToList();
+    }
+
+    public async Task<IReadOnlyList<GroupMemberInfo>> GetGroupMembersAsync(string groupId, CancellationToken ct)
+    {
+        var group = await GetByIdAsync(groupId, ct);
+        if (group is null)
+            return Array.Empty<GroupMemberInfo>();
+
+        var memberships = await db.GroupUsers
             .Where(gu => gu.GroupId == groupId && gu.IsDeleted != true)
-            .Select(gu => gu.UserId)
             .ToListAsync(ct);
 
-        if (userIds.Count == 0)
-            return Array.Empty<AppUser>();
+        var userIds = memberships.Select(gu => gu.UserId).Distinct().ToList();
+        if (!userIds.Contains(group.OwnerId))
+            userIds.Add(group.OwnerId);
 
-        return await db.Users
+        if (userIds.Count == 0)
+            return Array.Empty<GroupMemberInfo>();
+
+        var users = await db.Users
             .Where(u => userIds.Contains(u.Id) && u.IsDeleted != true)
             .OrderByDescending(u => u.LastActiveAt)
             .ToListAsync(ct);
+
+        var roleByUserId = memberships
+            .GroupBy(gu => gu.UserId)
+            .ToDictionary(grouping => grouping.Key, grouping => grouping.First().Role ?? GroupUserRole.Member);
+        return users
+            .Select(user => new GroupMemberInfo(
+                user,
+                user.Id == group.OwnerId
+                    ? "Owner"
+                    : roleByUserId.GetValueOrDefault(user.Id, GroupUserRole.Member)))
+            .ToList();
+    }
+
+    public async Task<bool> IsUserInGroupAsync(string groupId, string userId, CancellationToken ct)
+    {
+        return await db.GroupUsers
+            .AnyAsync(gu => gu.GroupId == groupId && gu.UserId == userId && gu.IsDeleted != true, ct);
+    }
+
+    public async Task<bool> CanManageMembersAsync(string groupId, string userId, CancellationToken ct)
+    {
+        var group = await db.Groups
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.IsDeleted != true, ct);
+        if (group is null)
+            return false;
+
+        if (group.OwnerId == userId)
+            return true;
+
+        return await db.GroupUsers.AnyAsync(gu =>
+            gu.GroupId == groupId &&
+            gu.UserId == userId &&
+            gu.Role == GroupUserRole.Admin &&
+            gu.IsDeleted != true,
+            ct);
     }
 
     public async Task<bool> IsGroupNameExistAsync(string groupName, CancellationToken ct)
@@ -160,6 +220,7 @@ public class GroupService(SafePulseContext db) : IGroupService
                 Id = Guid.NewGuid().ToString(),
                 UserId = user.Id,
                 GroupId = group.Id,
+                Role = GroupUserRole.Member,
                 CreatedAt = DateTime.UtcNow,
                 UpdatedAt = DateTime.UtcNow
             });
@@ -176,11 +237,27 @@ public class GroupService(SafePulseContext db) : IGroupService
         await db.SaveChangesAsync(ct);
     }
 
-    public async Task<bool> RemoveUserFromGroupAsync(string groupId, string ownerId, string userId, CancellationToken ct)
+    public async Task<bool> RemoveUserFromGroupAsync(string groupId, string managerId, string userId, CancellationToken ct)
     {
         var group = await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.IsDeleted != true, ct);
         if (group is null)
+            return false;
+
+        if (group.OwnerId == userId)
+            return false;
+
+        var managerIsOwner = group.OwnerId == managerId;
+        var managerMembership = managerIsOwner
+            ? null
+            : await db.GroupUsers.FirstOrDefaultAsync(gu =>
+                gu.GroupId == groupId &&
+                gu.UserId == managerId &&
+                gu.Role == GroupUserRole.Admin &&
+                gu.IsDeleted != true,
+                ct);
+
+        if (!managerIsOwner && managerMembership is null)
             return false;
 
         var membership = await db.GroupUsers
@@ -188,7 +265,32 @@ public class GroupService(SafePulseContext db) : IGroupService
         if (membership is null)
             return false;
 
+        if (!managerIsOwner && membership.Role == GroupUserRole.Admin)
+            return false;
+
         membership.IsDeleted = true;
+        membership.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
+    public async Task<bool> UpdateMemberRoleAsync(string groupId, string ownerId, string userId, string role, CancellationToken ct)
+    {
+        var normalizedRole = role.Trim();
+        if (normalizedRole is not GroupUserRole.Member and not GroupUserRole.Admin)
+            throw new InvalidOperationException("Role must be Member or Admin");
+
+        var group = await db.Groups
+            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
+        if (group is null || group.OwnerId == userId)
+            return false;
+
+        var membership = await db.GroupUsers
+            .FirstOrDefaultAsync(gu => gu.GroupId == groupId && gu.UserId == userId && gu.IsDeleted != true, ct);
+        if (membership is null)
+            return false;
+
+        membership.Role = normalizedRole;
         membership.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return true;

@@ -2,6 +2,7 @@ using HeartPulse.Models;
 
 namespace HeartPulse.Data;
 
+using MongoDB.Bson;
 using MongoDB.Driver;
 
 public static class MongoIndexConfigurator
@@ -12,19 +13,24 @@ public static class MongoIndexConfigurator
         await ConfigureGroupIndexesAsync(db);
         await ConfigureGroupUserIndexesAsync(db);
         await ConfigureGroupInviteIndexesAsync(db);
+        await ConfigureRefreshSessionIndexesAsync(db);
+        await ConfigureTelegramLinkCodeIndexesAsync(db);
+        await ConfigureGroupStatusRequestIndexesAsync(db);
     }
 
     private static async Task ConfigureUserIndexesAsync(IMongoDatabase db)
     {
         var collection = db.GetCollection<AppUser>("users");
+        await DropIndexIfExistsAsync(collection, "idx_users_telegram_chatid_unique");
 
         var keys = Builders<AppUser>.IndexKeys
             .Ascending(x => x.ChatId);
 
-        var options = new CreateIndexOptions
+        var options = new CreateIndexOptions<AppUser>
         {
             Unique = true,
-            Name = "idx_users_telegram_chatid_unique"
+            Name = "idx_users_telegram_chatid_unique",
+            PartialFilterExpression = new BsonDocument("ChatId", new BsonDocument("$type", "long"))
         };
 
         var indexes = new List<CreateIndexModel<AppUser>>
@@ -37,10 +43,43 @@ public static class MongoIndexConfigurator
                 new CreateIndexOptions
                 {
                     Name = "idx_users_active_lastActiveAt"
+                }),
+            new(
+                Builders<AppUser>.IndexKeys.Ascending(x => x.NormalizedEmail),
+                new CreateIndexOptions<AppUser>
+                {
+                    Unique = true,
+                    Name = "idx_users_normalizedEmail_unique",
+                    PartialFilterExpression = new BsonDocument("NormalizedEmail", new BsonDocument("$type", "string"))
+                }),
+            new(
+                Builders<AppUser>.IndexKeys.Ascending(x => x.IsFake),
+                new CreateIndexOptions
+                {
+                    Name = "idx_users_isFake"
+                }),
+            new(
+                Builders<AppUser>.IndexKeys.Ascending(x => x.TelegramUserId),
+                new CreateIndexOptions<AppUser>
+                {
+                    Unique = true,
+                    Name = "idx_users_telegramUserId_unique",
+                    PartialFilterExpression = new BsonDocument("TelegramUserId", new BsonDocument("$type", "string"))
                 })
         };
 
         await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task DropIndexIfExistsAsync<T>(IMongoCollection<T> collection, string name)
+    {
+        try
+        {
+            await collection.Indexes.DropOneAsync(name);
+        }
+        catch (MongoCommandException ex) when (ex.CodeName == "IndexNotFound")
+        {
+        }
     }
     private static async Task ConfigureGroupIndexesAsync(IMongoDatabase db)
     {
@@ -110,6 +149,83 @@ public static class MongoIndexConfigurator
                 new CreateIndexOptions
                 {
                     Name = "idx_groupInvites_groupId"
+                })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureRefreshSessionIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<RefreshSession>("refreshSessions");
+
+        var indexes = new List<CreateIndexModel<RefreshSession>>
+        {
+            new(
+                Builders<RefreshSession>.IndexKeys.Ascending(x => x.TokenHash),
+                new CreateIndexOptions
+                {
+                    Unique = true,
+                    Name = "idx_refreshSessions_tokenHash_unique"
+                }),
+            new(
+                Builders<RefreshSession>.IndexKeys.Ascending(x => x.UserId),
+                new CreateIndexOptions
+                {
+                    Name = "idx_refreshSessions_userId"
+                }),
+            new(
+                Builders<RefreshSession>.IndexKeys.Ascending(x => x.ExpiresAt),
+                new CreateIndexOptions
+                {
+                    Name = "idx_refreshSessions_expiresAt"
+                })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureTelegramLinkCodeIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<TelegramLinkCode>("telegramLinkCodes");
+        var indexes = new List<CreateIndexModel<TelegramLinkCode>>
+        {
+            new(
+                Builders<TelegramLinkCode>.IndexKeys.Ascending(x => x.CodeHash),
+                new CreateIndexOptions
+                {
+                    Unique = true,
+                    Name = "idx_telegramLinkCodes_codeHash_unique"
+                }),
+            new(
+                Builders<TelegramLinkCode>.IndexKeys.Ascending(x => x.UserId),
+                new CreateIndexOptions
+                {
+                    Name = "idx_telegramLinkCodes_userId"
+                }),
+            new(
+                Builders<TelegramLinkCode>.IndexKeys.Ascending(x => x.ExpiresAt),
+                new CreateIndexOptions
+                {
+                    Name = "idx_telegramLinkCodes_expiresAt"
+                })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureGroupStatusRequestIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<GroupStatusRequest>("groupStatusRequests");
+        var indexes = new List<CreateIndexModel<GroupStatusRequest>>
+        {
+            new(
+                Builders<GroupStatusRequest>.IndexKeys
+                    .Ascending(x => x.GroupId)
+                    .Descending(x => x.CreatedAt),
+                new CreateIndexOptions
+                {
+                    Name = "idx_groupStatusRequests_groupId_createdAt"
                 })
         };
 

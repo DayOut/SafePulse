@@ -12,6 +12,9 @@ public class SafePulseContext : DbContext
     public DbSet<Group> Groups => Set<Group>();
     public DbSet<GroupUser> GroupUsers => Set<GroupUser>();
     public DbSet<GroupInvite> GroupInvites => Set<GroupInvite>();
+    public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
+    public DbSet<TelegramLinkCode> TelegramLinkCodes => Set<TelegramLinkCode>();
+    public DbSet<GroupStatusRequest> GroupStatusRequests => Set<GroupStatusRequest>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -20,5 +23,8 @@ public class SafePulseContext : DbContext
         modelBuilder.Entity<Group>().ToCollection("groups");
         modelBuilder.Entity<GroupUser>().ToCollection("groupUsers");
         modelBuilder.Entity<GroupInvite>().ToCollection("groupInvites");
+        modelBuilder.Entity<RefreshSession>().ToCollection("refreshSessions");
+        modelBuilder.Entity<TelegramLinkCode>().ToCollection("telegramLinkCodes");
+        modelBuilder.Entity<GroupStatusRequest>().ToCollection("groupStatusRequests");
     }
 }

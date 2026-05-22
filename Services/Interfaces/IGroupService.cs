@@ -5,16 +5,21 @@ namespace HeartPulse.Services.Interfaces;
 public interface IGroupService
 {
     Task<IReadOnlyList<Group>> GetUserGroupsAsync(string userId, CancellationToken ct);
+    Task<IReadOnlyList<string>> GetUserGroupIdsAsync(string userId, CancellationToken ct);
     Task<IReadOnlyList<Group>> GetOwnedGroupsAsync(string ownerId, CancellationToken ct);
     Task<Group?> GetByIdAsync(string groupId, CancellationToken ct);
     Task<IReadOnlyList<AppUser>> GetGroupUsersAsync(string groupId, CancellationToken ct);
+    Task<IReadOnlyList<GroupMemberInfo>> GetGroupMembersAsync(string groupId, CancellationToken ct);
+    Task<bool> IsUserInGroupAsync(string groupId, string userId, CancellationToken ct);
+    Task<bool> CanManageMembersAsync(string groupId, string userId, CancellationToken ct);
     Task<bool> IsGroupNameExistAsync(string groupName, CancellationToken ct);
     Task<bool> IsGroupIdExistAsync(string groupId, CancellationToken ct);
     Task<Group> CreateAsync(string ownerId, string name, CancellationToken ct);
     Task<Group?> UpdateAsync(string groupId, string ownerId, string? name, CancellationToken ct);
     Task<bool> SoftDeleteAsync(string groupId, string ownerId, CancellationToken ct);
     Task JoinUserToGroupAsync(AppUser user, string groupId, CancellationToken ct);
-    Task<bool> RemoveUserFromGroupAsync(string groupId, string ownerId, string userId, CancellationToken ct);
+    Task<bool> RemoveUserFromGroupAsync(string groupId, string managerId, string userId, CancellationToken ct);
+    Task<bool> UpdateMemberRoleAsync(string groupId, string ownerId, string userId, string role, CancellationToken ct);
     Task<GroupInvite> CreateInviteAsync(string groupId, string ownerId, string? note, CancellationToken ct);
     Task<IReadOnlyList<GroupInvite>> GetInvitesAsync(string groupId, string ownerId, CancellationToken ct);
     Task<bool> RevokeInviteAsync(string groupId, string ownerId, string inviteId, CancellationToken ct);
