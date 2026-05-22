@@ -9,7 +9,9 @@ namespace HeartPulse.Services;
 
 public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : IGroupService
 {
+    private readonly IMongoCollection<Group> _groups = mongoDatabase.GetCollection<Group>("groups");
     private readonly IMongoCollection<GroupUser> _groupUsers = mongoDatabase.GetCollection<GroupUser>("groupUsers");
+    private readonly IMongoCollection<GroupInvite> _groupInvites = mongoDatabase.GetCollection<GroupInvite>("groupInvites");
 
     public async Task<IReadOnlyList<Group>> GetUserGroupsAsync(string userId, CancellationToken ct)
     {
@@ -174,33 +176,29 @@ public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : I
 
     public async Task<bool> SoftDeleteAsync(string groupId, string ownerId, CancellationToken ct)
     {
-        var group = await db.Groups
-            .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
-        if (group is null)
+        var now = DateTime.UtcNow;
+        var groupResult = await _groups.UpdateOneAsync(
+            g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true,
+            Builders<Group>.Update
+                .Set(g => g.IsDeleted, true)
+                .Set(g => g.UpdatedAt, now),
+            cancellationToken: ct);
+
+        if (groupResult.ModifiedCount == 0)
             return false;
 
-        var now = DateTime.UtcNow;
-        group.IsDeleted = true;
-        group.UpdatedAt = now;
+        await _groupUsers.UpdateManyAsync(
+            gu => gu.GroupId == groupId && gu.IsDeleted != true,
+            Builders<GroupUser>.Update
+                .Set(gu => gu.IsDeleted, true)
+                .Set(gu => gu.UpdatedAt, now),
+            cancellationToken: ct);
 
-        var memberships = await db.GroupUsers
-            .Where(gu => gu.GroupId == groupId && gu.IsDeleted != true)
-            .ToListAsync(ct);
+        await _groupInvites.UpdateManyAsync(
+            i => i.GroupId == groupId && i.RevokedAt == null,
+            Builders<GroupInvite>.Update.Set(i => i.RevokedAt, now),
+            cancellationToken: ct);
 
-        foreach (var membership in memberships)
-        {
-            membership.IsDeleted = true;
-            membership.UpdatedAt = now;
-        }
-
-        var invites = await db.GroupInvites
-            .Where(i => i.GroupId == groupId && i.RevokedAt == null)
-            .ToListAsync(ct);
-
-        foreach (var invite in invites)
-            invite.RevokedAt = now;
-
-        await db.SaveChangesAsync(ct);
         return true;
     }
 
