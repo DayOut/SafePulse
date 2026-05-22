@@ -882,34 +882,39 @@ function GroupDetails({
 
   return (
     <div>
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+      <div className="group-detail-header mb-4">
         <div>
           <h2 className="text-lg font-semibold">{group.Name}</h2>
           <p className="text-sm text-neutral-400">Owner: {group.OwnerId}</p>
         </div>
-        <div className="flex flex-wrap justify-end gap-2">
-          <button className="icon-button" disabled={isRequestingStatus} onClick={onRequestStatus} title="Request status update" type="button">
+        <div className="group-actions">
+          <button className="group-action-request" disabled={isRequestingStatus} onClick={onRequestStatus} title="Request status update" type="button">
             <Send className="h-4 w-4" />
+            <span>Request status updates</span>
           </button>
           {canManage ? (
             <>
-              <input className="field min-w-[180px]" onChange={(event) => setMemberId(event.target.value)} placeholder="User id" value={memberId} />
-              <button
-                className="icon-button"
-                disabled={!memberId.trim()}
-                onClick={() => {
-                  onAddMember(memberId.trim());
-                  setMemberId("");
-                }}
-                title="Add user"
-                type="button"
-              >
-                <Plus className="h-4 w-4" />
-              </button>
-              <input className="field min-w-[180px]" onChange={(event) => onInviteNoteChange(event.target.value)} placeholder="Invite note" value={inviteNote} />
-              <button className="icon-button strong" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
-                <Copy className="h-4 w-4" />
-              </button>
+              <div className="group-action-row">
+                <input className="field" onChange={(event) => setMemberId(event.target.value)} placeholder="User id" value={memberId} />
+                <button
+                  className="icon-button"
+                  disabled={!memberId.trim()}
+                  onClick={() => {
+                    onAddMember(memberId.trim());
+                    setMemberId("");
+                  }}
+                  title="Add user"
+                  type="button"
+                >
+                  <Plus className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="group-action-row">
+                <input className="field" onChange={(event) => onInviteNoteChange(event.target.value)} placeholder="Invite note" value={inviteNote} />
+                <button className="icon-button strong" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
+                  <Copy className="h-4 w-4" />
+                </button>
+              </div>
             </>
           ) : (
             <span className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-400">Member</span>
