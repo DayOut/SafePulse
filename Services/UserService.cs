@@ -16,6 +16,30 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
         long chatId,
         CancellationToken ct)
     {
+        var now = DateTime.UtcNow;
+        var linkedFilter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true),
+            Builders<AppUser>.Filter.Or(
+                Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+                Builders<AppUser>.Filter.Eq(u => u.TelegramUserId, userId),
+                Builders<AppUser>.Filter.Eq(u => u.ChatId, chatId)));
+
+        var linkedUser = await _users.FindOneAndUpdateAsync(
+            linkedFilter,
+            Builders<AppUser>.Update
+                .Set(u => u.ChatId, chatId)
+                .Set(u => u.TelegramUserId, userId)
+                .Set(u => u.LastSeenOnlineAt, now)
+                .Set(u => u.UpdatedAt, now),
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+
+        if (linkedUser is not null)
+            return linkedUser;
+
         var user = await db.Users.FindAsync(new object?[] { userId }, ct);
         if (user is not null && user.IsDeleted != true)
             return user;
@@ -25,16 +49,16 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
             user = new AppUser
             {
                 Id = userId,
-                CreatedAt = DateTime.UtcNow
+                CreatedAt = now
             };
 
             await db.Users.AddAsync(user, ct);
         }
 
         user.UserName = userName;
-        user.LastActiveAt = DateTime.UtcNow;
-        user.LastSeenOnlineAt = DateTime.UtcNow;
-        user.UpdatedAt = DateTime.UtcNow;
+        user.LastActiveAt = now;
+        user.LastSeenOnlineAt = now;
+        user.UpdatedAt = now;
         user.Status = UserStatus.Unknown;
         user.ChatId = chatId;
         user.TelegramUserId = userId;
