@@ -10,6 +10,9 @@ services:
       - Mongo__ConnectionString=mongodb://mongo:27017
       - Mongo__Database=safepulse
       - Api__AdminKey=${API_ADMIN_KEY}
+      - Auth__SigningKey=${AUTH_SIGNING_KEY}
+      - Auth__BootstrapAdminTelegramIds__0=${BOOTSTRAP_ADMIN_TELEGRAM_ID}
+      - Auth__BootstrapAdminEmails__0=${BOOTSTRAP_ADMIN_EMAIL}
       - Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
       - Telegram__WebhookSecretToken=${TELEGRAM_WEBHOOK_SECRET}
     depends_on:

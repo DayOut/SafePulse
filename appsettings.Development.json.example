@@ -21,5 +21,28 @@
   },
   "Api": {
     "AdminKey": "dev-admin-key"
+  },
+  "Auth": {
+    "Issuer": "SafePulse",
+    "Audience": "SafePulse.Web",
+    "SigningKey": "dev-only-safe-pulse-signing-key-change-for-production-12345",
+    "AccessTokenMinutes": 15,
+    "RefreshTokenDays": 30,
+    "TelegramAuthMaxAgeMinutes": 15,
+    "BootstrapAdminTelegramIds": [
+      "admin-1"
+    ],
+    "BootstrapAdminEmails": [
+      "admin@example.com"
+    ],
+    "EnableDevLogin": true
+  },
+  "FakeStatusSimulator": {
+    "Enabled": true,
+    "GroupName": "fear group",
+    "OwnerUserId": "admin-1",
+    "UserCount": 130,
+    "IntervalSeconds": 10,
+    "UsersChangedPerTick": 12
   }
 }
