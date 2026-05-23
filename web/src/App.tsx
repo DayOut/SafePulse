@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Activity,
   Bell,
   CheckCircle2,
   Copy,
@@ -41,8 +40,8 @@ import {
   getTelegramLinkStatus,
   loginWithPassword,
   logout,
-  refreshSession,
   registerWithPassword,
+  refreshSession,
   removeGroupMember,
   requestGroupStatusUpdate,
   resolveInvite,
@@ -54,17 +53,41 @@ import { loadSettings, saveSettings } from "./settings";
 
 type Tab = "overview" | "groups" | "settings";
 
-const statuses: Array<{
-  value: UserStatus;
-  label: string;
-  tone: string;
-  icon: typeof CheckCircle2;
-}> = [
-  { value: "Safe", label: "Safe", tone: "safe", icon: CheckCircle2 },
-  { value: "InShelter", label: "In shelter", tone: "shelter", icon: DoorOpen },
-  { value: "NeedHelp", label: "Need help", tone: "danger", icon: ShieldAlert },
-];
+// ── status helpers ────────────────────────────────────────────────
+function statusKey(s: UserStatus): "safe" | "shelter" | "help" | "unknown" {
+  if (s === "Safe") return "safe";
+  if (s === "InShelter") return "shelter";
+  if (s === "NeedHelp") return "help";
+  return "unknown";
+}
 
+function groupCallsign(name: string): string {
+  const words = name.split(/\s+/).filter(Boolean);
+  if (words.length === 1) return name.substring(0, 6).toUpperCase();
+  return words.map((w) => w[0]).join("").substring(0, 7).toUpperCase();
+}
+
+function userInitials(userName: string): string {
+  const parts = userName.split(/[\s_.\-]+/).filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[1][0]).toUpperCase();
+  return userName.substring(0, 2).toUpperCase();
+}
+
+const STATUS_LABELS: Record<UserStatus, string> = {
+  Safe: "Safe",
+  InShelter: "In shelter",
+  NeedHelp: "Need help",
+  Unknown: "Unknown",
+};
+
+const STATUS_SHORT: Record<UserStatus, string> = {
+  Safe: "SAFE",
+  InShelter: "SHLT",
+  NeedHelp: "HELP",
+  Unknown: "UNK",
+};
+
+// ── App ────────────────────────────────────────────────────────────
 export default function App() {
   const queryClient = useQueryClient();
   const initialGroupId = useMemo(() => readInitialGroupId(), []);
@@ -81,22 +104,10 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     refreshSession(settings)
-      .then((nextSession) => {
-        if (!cancelled)
-          setSession(nextSession);
-      })
-      .catch(() => {
-        if (!cancelled)
-          setSession(null);
-      })
-      .finally(() => {
-        if (!cancelled)
-          setAuthChecked(true);
-      });
-
-    return () => {
-      cancelled = true;
-    };
+      .then((nextSession) => { if (!cancelled) setSession(nextSession); })
+      .catch(() => { if (!cancelled) setSession(null); })
+      .finally(() => { if (!cancelled) setAuthChecked(true); });
+    return () => { cancelled = true; };
   }, [settings]);
 
   const currentUser = useQuery({
@@ -112,40 +123,37 @@ export default function App() {
   });
 
   const statusMutation = useMutation({
-    mutationFn: (status: UserStatus) => updateStatus(settings, session!.AccessToken, session!.User.Id, status),
+    mutationFn: (status: UserStatus) =>
+      updateStatus(settings, session!.AccessToken, session!.User.Id, status),
     onSuccess: (user) => {
       setSession((existing) => existing ? { ...existing, User: user } : existing);
-      setStatusChangedMessage(`Status changed to ${formatStatusLabel(user.Status)}.`);
+      setStatusChangedMessage(`Status changed to ${STATUS_LABELS[user.Status]}.`);
       queryClient.setQueryData(["current-user", settings, session?.AccessToken], user);
-      queryClient.setQueryData<MyGroupDto[]>(["my-groups", settings, session?.AccessToken], (groups) =>
-        groups?.map((group) => ({
-          ...group,
-          Members: group.Members.map((member) =>
-            member.Id === user.Id
-              ? {
-                  ...member,
-                  UserName: user.UserName,
-                  Status: user.Status,
-                  LastActiveAt: user.LastActiveAt,
-                  LastSeenOnlineAt: user.LastSeenOnlineAt,
-                }
-              : member,
-          ),
-        })),
+      queryClient.setQueryData<MyGroupDto[]>(
+        ["my-groups", settings, session?.AccessToken],
+        (groups) =>
+          groups?.map((group) => ({
+            ...group,
+            Members: group.Members.map((member) =>
+              member.Id === user.Id
+                ? { ...member, UserName: user.UserName, Status: user.Status,
+                    LastActiveAt: user.LastActiveAt, LastSeenOnlineAt: user.LastSeenOnlineAt }
+                : member,
+            ),
+          })),
       );
     },
   });
 
   useEffect(() => {
-    if (!statusChangedMessage)
-      return;
-
+    if (!statusChangedMessage) return;
     const timer = window.setTimeout(() => setStatusChangedMessage(null), 3000);
     return () => window.clearTimeout(timer);
   }, [statusChangedMessage]);
 
   const passwordLoginMutation = useMutation({
-    mutationFn: (payload: { email: string; password: string }) => loginWithPassword(settings, payload.email, payload.password),
+    mutationFn: (payload: { email: string; password: string }) =>
+      loginWithPassword(settings, payload.email, payload.password),
     onSuccess: (nextSession) => {
       setSession(nextSession);
       void queryClient.invalidateQueries();
@@ -178,9 +186,7 @@ export default function App() {
   });
 
   useEffect(() => {
-    if (!session)
-      return;
-
+    if (!session) return;
     let isCancelled = false;
     let reconnectTimer: number | undefined;
     const connection = createStatusConnection(
@@ -189,30 +195,23 @@ export default function App() {
       (rawMessage) => {
         const message = normalizeStatusChanged(rawMessage);
         let shouldRefetchGroups = false;
-        queryClient.setQueryData<MyGroupDto[]>(["my-groups", settings, session.AccessToken], (groups) =>
-          groups?.map((group) => {
-            if (!message.GroupIds.includes(group.Id))
-              return group;
-
-            var hasMember = group.Members.some((member) => member.Id === message.UserId);
-            if (!hasMember)
-              shouldRefetchGroups = true;
-
-            return {
-                  ...group,
-                  Members: group.Members.map((member) =>
-                    member.Id === message.UserId
-                      ? {
-                          ...member,
-                          UserName: message.UserName,
-                          Status: message.Status,
-                          LastActiveAt: message.LastActiveAt,
-                          LastSeenOnlineAt: message.LastSeenOnlineAt,
-                        }
-                      : member,
-                  ),
-                };
-          }),
+        queryClient.setQueryData<MyGroupDto[]>(
+          ["my-groups", settings, session.AccessToken],
+          (groups) =>
+            groups?.map((group) => {
+              if (!message.GroupIds.includes(group.Id)) return group;
+              const hasMember = group.Members.some((m) => m.Id === message.UserId);
+              if (!hasMember) shouldRefetchGroups = true;
+              return {
+                ...group,
+                Members: group.Members.map((member) =>
+                  member.Id === message.UserId
+                    ? { ...member, UserName: message.UserName, Status: message.Status,
+                        LastActiveAt: message.LastActiveAt, LastSeenOnlineAt: message.LastSeenOnlineAt }
+                    : member,
+                ),
+              };
+            }),
         );
         if (shouldRefetchGroups)
           void queryClient.invalidateQueries({ queryKey: ["my-groups"] });
@@ -224,46 +223,32 @@ export default function App() {
       },
       setConnectionState,
       () => {
-        if (isCancelled)
-          return;
-
-        reconnectTimer = window.setTimeout(() => {
-          void start();
-        }, 3000);
+        if (isCancelled) return;
+        reconnectTimer = window.setTimeout(() => { void start(); }, 3000);
       },
     );
 
     async function start() {
-      if (isCancelled || connection.state !== "Disconnected")
-        return;
-
+      if (isCancelled || connection.state !== "Disconnected") return;
       try {
         setConnectionState("Connecting");
         await connection.start();
-        if (isCancelled)
-          return;
-
+        if (isCancelled) return;
         await connection.invoke("JoinUserGroups");
         setConnectionState("Connected");
       } catch {
         setConnectionState("Disconnected");
-        if (!isCancelled) {
-          reconnectTimer = window.setTimeout(() => {
-            void start();
-          }, 3000);
-        }
+        if (!isCancelled)
+          reconnectTimer = window.setTimeout(() => { void start(); }, 3000);
       }
     }
 
     void start();
     statusConnectionRef.current = connection;
-
     return () => {
       isCancelled = true;
-      if (reconnectTimer)
-        window.clearTimeout(reconnectTimer);
-      if (statusConnectionRef.current === connection)
-        statusConnectionRef.current = null;
+      if (reconnectTimer) window.clearTimeout(reconnectTimer);
+      if (statusConnectionRef.current === connection) statusConnectionRef.current = null;
       void connection.stop();
     };
   }, [queryClient, settings, session]);
@@ -276,7 +261,6 @@ export default function App() {
       devUserName: draftSettings.devUserName.trim(),
       overviewBlockSize: draftSettings.overviewBlockSize,
     };
-
     saveSettings(normalized);
     setSettings(normalized);
     setSession(null);
@@ -284,56 +268,76 @@ export default function App() {
   }
 
   if (!authChecked) {
-    return <Shell><p className="text-sm text-neutral-400">Checking session...</p></Shell>;
+    return (
+      <div style={{ minHeight: "100svh", display: "flex", alignItems: "center", justifyContent: "center" }}>
+        <span className="sp-mono" style={{ fontSize: 12, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
+          CHECKING SESSION…
+        </span>
+      </div>
+    );
   }
 
   if (!session) {
     return (
-      <Shell>
-        <LoginPage
-          draftSettings={draftSettings}
-          setDraftSettings={setDraftSettings}
-          onSubmitSettings={persistSettings}
-          onLogin={(payload) => passwordLoginMutation.mutate(payload)}
-          onRegister={(payload) => registerMutation.mutate(payload)}
-          onDevLogin={() => devLoginMutation.mutate()}
-          error={passwordLoginMutation.error?.message ?? registerMutation.error?.message ?? devLoginMutation.error?.message}
-          isLoading={passwordLoginMutation.isPending || registerMutation.isPending || devLoginMutation.isPending}
-        />
-      </Shell>
+      <LoginPage
+        draftSettings={draftSettings}
+        setDraftSettings={setDraftSettings}
+        onSubmitSettings={persistSettings}
+        onLogin={(payload) => passwordLoginMutation.mutate(payload)}
+        onRegister={(payload) => registerMutation.mutate(payload)}
+        onDevLogin={() => devLoginMutation.mutate()}
+        error={passwordLoginMutation.error?.message ?? registerMutation.error?.message ?? devLoginMutation.error?.message}
+        isLoading={passwordLoginMutation.isPending || registerMutation.isPending || devLoginMutation.isPending}
+      />
     );
   }
 
+  const activeStatus = currentUser.data?.Status ?? session.User.Status;
+  const connClass = connectionState === "Connected" ? "connected"
+    : connectionState === "Disconnected" ? "disconnected" : "connecting";
+
   return (
-    <main className="min-h-screen bg-neutral-950 text-neutral-100">
-      <header className="sticky top-0 z-10 border-b border-neutral-800 bg-neutral-950/95">
-        <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 py-3">
-          <div>
-            <h1 className="text-xl font-semibold tracking-normal">SafePulse</h1>
-            <p className="text-sm text-neutral-400">{session.User.UserName}</p>
+    <main>
+      {/* ── Top bar ── */}
+      <header className="sp-topbar">
+        <div className="sp-topbar-brand">
+          <span className="sp-topbar-logo">
+            <span style={{ width: 8, height: 8, background: "var(--sp-safe)" }} className="sp-pulse" />
+          </span>
+          <div className="sp-topbar-name">
+            <span className="sp-topbar-title">SafePulse</span>
+            <span className="sp-topbar-sub">{session.User.UserName}</span>
           </div>
-          <div className="flex items-center gap-2">
-            <nav className="flex rounded-md border border-neutral-800 bg-neutral-900 p-1">
-              <TabButton active={activeTab === "overview"} onClick={() => setActiveTab("overview")} label="Overview" />
-              <TabButton active={activeTab === "groups"} onClick={() => setActiveTab("groups")} label="Groups" />
-              <TabButton active={activeTab === "settings"} onClick={() => setActiveTab("settings")} label="Settings" />
-            </nav>
-            <button className="icon-button" onClick={() => logoutMutation.mutate()} title="Logout" type="button">
-              <LogOut className="h-4 w-4" />
-            </button>
-          </div>
+        </div>
+        <div className="sp-topbar-actions">
+          <span className={`sp-conn-pill sp-conn-pill--${connClass}`}>
+            <span className="sp-conn-dot sp-pulse" />
+            {connectionState.toUpperCase()}
+          </span>
+          <nav className="sp-tab-nav">
+            <button className={`sp-tab-btn ${activeTab === "overview" ? "active" : ""}`}
+              onClick={() => setActiveTab("overview")} type="button">OPS</button>
+            <button className={`sp-tab-btn ${activeTab === "groups" ? "active" : ""}`}
+              onClick={() => setActiveTab("groups")} type="button">GRP</button>
+            <button className={`sp-tab-btn ${activeTab === "settings" ? "active" : ""}`}
+              onClick={() => setActiveTab("settings")} type="button">SET</button>
+          </nav>
+          <button className="sp-icon-btn" onClick={() => logoutMutation.mutate()} title="Logout" type="button">
+            <LogOut size={15} />
+          </button>
         </div>
       </header>
 
-      <div className="app-content mx-auto grid max-w-7xl gap-4 px-4 py-4">
+      {/* ── Page content ── */}
+      <div className="app-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "0 0" }}>
         {activeTab === "overview" && (
           <OverviewPage
             groups={myGroups.data ?? []}
             isLoading={myGroups.isLoading}
             onRefresh={() => void myGroups.refetch()}
+            activeStatus={activeStatus}
           />
         )}
-
         {activeTab === "groups" && (
           <GroupsPage
             settings={settings}
@@ -346,7 +350,6 @@ export default function App() {
             }}
           />
         )}
-
         {activeTab === "settings" && (
           <SettingsPage
             draftSettings={draftSettings}
@@ -359,32 +362,27 @@ export default function App() {
         )}
       </div>
 
-      <StatusFooter
-        activeStatus={currentUser.data?.Status ?? session.User.Status}
+      {/* ── Floating status cluster ── */}
+      <FloatingStatusCluster
+        activeStatus={activeStatus}
         isUpdating={statusMutation.isPending}
         onUpdateStatus={(status) => {
-          if (status === "NeedHelp" && !window.confirm("Confirm that you need help?"))
-            return;
-
+          if (status === "NeedHelp" && !window.confirm("Confirm that you need help?")) return;
           statusMutation.mutate(status);
         }}
         error={statusMutation.error?.message ?? currentUser.error?.message}
-        connectionState={connectionState}
       />
-      {statusRequest && <StatusRequestToast request={statusRequest} onDismiss={() => setStatusRequest(null)} />}
+
+      {/* ── Toasts ── */}
+      {statusRequest && (
+        <StatusRequestToast request={statusRequest} onDismiss={() => setStatusRequest(null)} />
+      )}
       {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
     </main>
   );
 }
 
-function Shell({ children }: { children: ReactNode }) {
-  return (
-    <main className="min-h-screen bg-neutral-950 px-4 py-6 text-neutral-100">
-      <div className="mx-auto max-w-xl">{children}</div>
-    </main>
-  );
-}
-
+// ── Login page ──────────────────────────────────────────────────────
 function LoginPage({
   draftSettings,
   setDraftSettings,
@@ -396,10 +394,10 @@ function LoginPage({
   isLoading,
 }: {
   draftSettings: AppSettings;
-  setDraftSettings: (settings: AppSettings) => void;
-  onSubmitSettings: (event: FormEvent) => void;
-  onLogin: (payload: { email: string; password: string }) => void;
-  onRegister: (payload: { email: string; userName: string; password: string }) => void;
+  setDraftSettings: (s: AppSettings) => void;
+  onSubmitSettings: (e: FormEvent) => void;
+  onLogin: (p: { email: string; password: string }) => void;
+  onRegister: (p: { email: string; userName: string; password: string }) => void;
   onDevLogin: () => void;
   error?: string;
   isLoading: boolean;
@@ -408,64 +406,1043 @@ function LoginPage({
   const [email, setEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
+  const [showSettings, setShowSettings] = useState(false);
 
   function submitAuth(event: FormEvent) {
     event.preventDefault();
-    if (mode === "login") {
-      onLogin({ email, password });
-      return;
-    }
-
+    if (mode === "login") { onLogin({ email, password }); return; }
     onRegister({ email, userName, password });
   }
 
   return (
-    <section className="rounded-md border border-neutral-800 bg-neutral-900 p-4">
-      <h1 className="text-2xl font-semibold">SafePulse</h1>
-      <p className="mt-1 text-sm text-neutral-400">Sign in with email and password to use the web MVP.</p>
-      <div className="mt-5 flex rounded-md border border-neutral-800 bg-neutral-950 p-1">
-        <button className={`tab-button flex-1 ${mode === "login" ? "active" : ""}`} onClick={() => setMode("login")} type="button">
-          Login
-        </button>
-        <button className={`tab-button flex-1 ${mode === "register" ? "active" : ""}`} onClick={() => setMode("register")} type="button">
-          Register
-        </button>
-      </div>
-      <form className="mt-4 grid gap-3" onSubmit={submitAuth}>
-        <label className="label">
-          Email
-          <input className="field" onChange={(event) => setEmail(event.target.value)} type="email" value={email} />
-        </label>
-        {mode === "register" && (
-          <label className="label">
-            Display name
-            <input className="field" onChange={(event) => setUserName(event.target.value)} value={userName} />
-          </label>
-        )}
-        <label className="label">
-          Password
-          <input className="field" onChange={(event) => setPassword(event.target.value)} type="password" value={password} />
-        </label>
-        <button className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-950" disabled={isLoading} type="submit">
-          {isLoading ? "Please wait..." : mode === "login" ? "Login" : "Create account"}
-        </button>
-      </form>
-      <button className="mt-4 rounded-md border border-neutral-700 px-3 py-2 text-sm" disabled={isLoading} onClick={onDevLogin} type="button">
-        Development login
-      </button>
-      {error && <p className="mt-3 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{error}</p>}
+    <div className="sp-login-wrap">
+      <div className="sp-login-panel">
+        {/* Brand */}
+        <div className="sp-login-brand">
+          <span className="sp-login-logo sp-brackets">
+            <span style={{ width: 18, height: 18, background: "var(--sp-safe)" }} className="sp-pulse" />
+          </span>
+          <div className="sp-login-title">
+            <h1>SafePulse</h1>
+            <p>Volunteer · safety · network</p>
+          </div>
+        </div>
 
-      <form className="mt-6 grid gap-3 border-t border-neutral-800 pt-4" onSubmit={onSubmitSettings}>
-        <SettingsFields draftSettings={draftSettings} setDraftSettings={setDraftSettings} />
-        <button className="inline-flex w-fit items-center gap-2 rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-950" type="submit">
-          <Save className="h-4 w-4" />
-          Save settings
+        {/* Auth form */}
+        <div className="sp-auth-tabs">
+          <button className={`sp-auth-tab ${mode === "login" ? "active" : ""}`}
+            onClick={() => setMode("login")} type="button">Login</button>
+          <button className={`sp-auth-tab ${mode === "register" ? "active" : ""}`}
+            onClick={() => setMode("register")} type="button">Register</button>
+        </div>
+
+        <form style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={submitAuth}>
+          <SpField label="EMAIL" type="email" placeholder="you@org.org" value={email}
+            onChange={setEmail} icon={<MailIcon />} />
+          {mode === "register" && (
+            <SpField label="DISPLAY NAME" placeholder="How others see you" value={userName}
+              onChange={setUserName} icon={<UserIcon />} sans />
+          )}
+          <SpField label="PASSWORD" type="password" placeholder="••••••••" value={password}
+            onChange={setPassword} icon={<LockIcon />} />
+          {mode === "register" && (
+            <SpField label="CONFIRM PASSWORD" type="password" placeholder="••••••••" value=""
+              onChange={() => {}} icon={<LockIcon />} />
+          )}
+
+          <button className="sp-btn-primary" disabled={isLoading} type="submit">
+            {isLoading ? "PLEASE WAIT…" : mode === "login" ? "LOGIN" : "CREATE ACCOUNT"}
+            <ChevronRight size={14} />
+          </button>
+        </form>
+
+        {error && <div className="sp-error-box">! {error}</div>}
+
+        <div className="sp-divider">
+          <span className="sp-divider-line" />
+          <span className="sp-divider-text">OR</span>
+          <span className="sp-divider-line" />
+        </div>
+
+        <button className="sp-btn-secondary" disabled={isLoading} onClick={onDevLogin} type="button">
+          <TelegramIcon />
+          Continue with Telegram
         </button>
-      </form>
-    </section>
+        <button className="sp-btn-ghost" disabled={isLoading} onClick={onDevLogin} type="button">
+          DEV LOGIN · ADMIN-1
+        </button>
+
+        {/* API settings */}
+        <div>
+          <button
+            type="button"
+            style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
+            onClick={() => setShowSettings((s) => !s)}
+          >
+            <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-4)", letterSpacing: "0.14em" }}>
+              {showSettings ? "▾" : "▸"} API SETTINGS
+            </span>
+          </button>
+          {showSettings && (
+            <form style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}
+              onSubmit={onSubmitSettings}>
+              <SpField label="API URL" placeholder="Same origin" value={draftSettings.apiBaseUrl}
+                onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
+              <SpField label="DEV USER ID" value={draftSettings.devUserId}
+                onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
+              <SpField label="DEV USER NAME" value={draftSettings.devUserName}
+                onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
+              <button className="sp-field-save-btn" type="submit">
+                <Save size={13} /> SAVE SETTINGS
+              </button>
+            </form>
+          )}
+        </div>
+
+        {/* Endpoint footer */}
+        <div className="sp-login-footer">
+          <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>
+            ENDPOINT
+          </span>
+          <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-2)", display: "flex", alignItems: "center", gap: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--sp-safe)" }} className="sp-pulse" />
+            {draftSettings.apiBaseUrl || "same-origin"} · v1
+          </span>
+        </div>
+      </div>
+    </div>
   );
 }
 
+// ── Floating status cluster ────────────────────────────────────────
+function FloatingStatusCluster({
+  activeStatus,
+  isUpdating,
+  onUpdateStatus,
+  error,
+}: {
+  activeStatus: UserStatus;
+  isUpdating: boolean;
+  onUpdateStatus: (s: UserStatus) => void;
+  error?: string;
+}) {
+  return (
+    <div className="sp-cluster-wrapper">
+      {error && (
+        <div className="sp-cluster-meta">
+          <span className="sp-cluster-error sp-mono">{error}</span>
+        </div>
+      )}
+      <div className="sp-cluster">
+        <ClusterBtn status="Safe" active={activeStatus === "Safe"} disabled={isUpdating}
+          onClick={() => onUpdateStatus("Safe")} />
+        <ClusterBtn status="InShelter" active={activeStatus === "InShelter"} disabled={isUpdating}
+          onClick={() => onUpdateStatus("InShelter")} />
+        <ClusterBtn status="NeedHelp" active={activeStatus === "NeedHelp"} disabled={isUpdating}
+          onClick={() => onUpdateStatus("NeedHelp")} sos />
+      </div>
+    </div>
+  );
+}
+
+function ClusterBtn({
+  status,
+  active,
+  disabled,
+  onClick,
+  sos,
+}: {
+  status: UserStatus;
+  active: boolean;
+  disabled: boolean;
+  onClick: () => void;
+  sos?: boolean;
+}) {
+  const key = statusKey(status);
+  const Icon = status === "Safe" ? ShieldCheck : status === "InShelter" ? DoorOpen : ShieldAlert;
+
+  return (
+    <div className="sp-cluster-btn-wrap">
+      <button
+        className={`sp-cluster-btn sp-cluster-btn--${key} ${active ? "active" : ""} ${sos ? "sp-pulse-ring" : ""}`}
+        disabled={disabled}
+        onClick={onClick}
+        type="button"
+        title={STATUS_LABELS[status]}
+      >
+        <Icon size={sos ? 28 : 22} strokeWidth={1.6} />
+        {sos && <span className="sp-cluster-sos-badge">SOS</span>}
+      </button>
+      <span className={`sp-cluster-label sp-cluster-label--${key}`}>
+        {STATUS_SHORT[status]}
+      </span>
+    </div>
+  );
+}
+
+// ── Overview page ──────────────────────────────────────────────────
+function OverviewPage({
+  groups,
+  isLoading,
+  onRefresh,
+  activeStatus,
+}: {
+  groups: MyGroupDto[];
+  isLoading: boolean;
+  onRefresh: () => void;
+  activeStatus: UserStatus;
+}) {
+  const totals = { Unknown: 0, Safe: 0, NeedHelp: 0, InShelter: 0 } as Record<UserStatus, number>;
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const member of group.Members) {
+      if (seen.has(member.Id)) continue;
+      seen.add(member.Id);
+      totals[member.Status] = (totals[member.Status] ?? 0) + 1;
+    }
+  }
+  const total = seen.size;
+
+  const sKey = statusKey(activeStatus);
+  const StatusIcon = activeStatus === "Safe" ? ShieldCheck : activeStatus === "InShelter" ? DoorOpen : ShieldAlert;
+
+  return (
+    <div className="sp-page">
+      {/* Last report */}
+      <div className="sp-section">
+        <div className="sp-section-head">
+          <span className="sp-section-head-label">
+            <span className="sp-section-head-code">01</span>YOUR LAST REPORT
+          </span>
+          <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
+            USE CLUSTER ↓
+          </span>
+        </div>
+        <div className={`sp-last-report sp-last-report--${sKey}`}>
+          <span className="sp-last-report-icon">
+            <StatusIcon size={18} strokeWidth={1.6} />
+          </span>
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <div className="sp-last-report-label">
+              {STATUS_LABELS[activeStatus]}
+            </div>
+            <div className="sp-last-report-sub">
+              Broadcasting to {groups.length} group{groups.length !== 1 ? "s" : ""}
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Aggregates */}
+      <div className="sp-section" style={{ marginTop: 6 }}>
+        <div className="sp-section-head">
+          <span className="sp-section-head-label">
+            <span className="sp-section-head-code">02</span>NETWORK STATUS
+          </span>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", fontVariantNumeric: "tabular-nums" }}>
+              {total} people · {groups.length} groups
+            </span>
+            <button onClick={onRefresh} type="button"
+              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--sp-fg-3)", display: "flex" }}>
+              <RefreshCw size={13} />
+            </button>
+          </div>
+        </div>
+        {isLoading && (
+          <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", marginTop: 10 }}>LOADING…</p>
+        )}
+        {!isLoading && (
+          <div className="sp-stat-grid">
+            <StatTile status="NeedHelp" value={totals.NeedHelp} total={total} label="HELP" />
+            <StatTile status="Unknown"  value={totals.Unknown}  total={total} label="UNK" />
+            <StatTile status="InShelter" value={totals.InShelter} total={total} label="SHLT" />
+            <StatTile status="Safe"     value={totals.Safe}     total={total} label="SAFE" />
+          </div>
+        )}
+      </div>
+
+      {/* Groups summary */}
+      {!isLoading && groups.length > 0 && (
+        <div style={{ marginTop: 14 }}>
+          <div className="sp-section">
+            <div className="sp-section-head">
+              <span className="sp-section-head-label">
+                <span className="sp-section-head-code">03</span>MY GROUPS
+              </span>
+            </div>
+          </div>
+          <div className="sp-group-list" style={{ marginTop: 10 }}>
+            {groups.map((g) => <OverviewGroupRow key={g.Id} group={g} />)}
+          </div>
+        </div>
+      )}
+      {!isLoading && groups.length === 0 && (
+        <div className="sp-section" style={{ marginTop: 6 }}>
+          <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>
+            No groups yet — go to GRP tab to create or join one.
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function StatTile({ status, value, total, label }: { status: UserStatus; value: number; total: number; label: string }) {
+  const key = statusKey(status);
+  const colorVar = `var(--sp-${key})`;
+  const isHelp = status === "NeedHelp";
+
+  return (
+    <div className={`sp-stat-tile ${isHelp ? "sp-stat-tile--help" : ""}`}>
+      <div className="sp-stat-tile-head">
+        <span className={`sp-stat-tile-dot ${isHelp ? "sp-pulse" : ""}`}
+          style={{ background: colorVar }} />
+        <span className="sp-stat-tile-label sp-mono sp-up" style={{ color: colorVar }}>
+          {label}
+        </span>
+      </div>
+      <div className="sp-stat-tile-value sp-mono sp-tab"
+        style={{ color: status === "Unknown" ? "var(--sp-fg-2)" : colorVar }}>
+        <AnimatedCounter value={value} />
+      </div>
+      <div className="sp-stat-tile-total sp-mono">/ {String(total).padStart(2, "0")}</div>
+    </div>
+  );
+}
+
+function OverviewGroupRow({ group }: { group: MyGroupDto }) {
+  const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
+  for (const m of group.Members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
+  const total = group.Members.length;
+  const urgent = bd.NeedHelp > 0;
+
+  return (
+    <div className={`sp-group-row ${urgent ? "sp-group-row--urgent" : ""}`}>
+      <div className="sp-group-row-top">
+        <div className="sp-group-row-info">
+          <span className="sp-callsign" style={urgent ? { borderColor: "var(--sp-help)", color: "var(--sp-help)" } : {}}>
+            {groupCallsign(group.Name)}
+          </span>
+          <span className="sp-group-row-name">{group.Name}</span>
+        </div>
+        <div className="sp-group-row-meta">
+          <span className="sp-group-row-count">{total} ppl</span>
+        </div>
+      </div>
+      <div className="sp-group-row-breakdown">
+        <div className="sp-status-bar" style={{ flex: 1 }}>
+          {bd.NeedHelp  > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--help"    style={{ flex: bd.NeedHelp }} />}
+          {bd.Unknown   > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--unknown"  style={{ flex: bd.Unknown }} />}
+          {bd.InShelter > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--shelter"  style={{ flex: bd.InShelter }} />}
+          {bd.Safe      > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--safe"     style={{ flex: bd.Safe }} />}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          {bd.NeedHelp  > 0 && <span className="sp-group-row-stat sp-group-row-stat--help">{bd.NeedHelp} help</span>}
+          {bd.Unknown   > 0 && <span className="sp-group-row-stat sp-group-row-stat--unknown">{bd.Unknown} unk</span>}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AnimatedCounter({ value }: { value: number }) {
+  const digits = value.toString().split("");
+  return (
+    <span style={{ display: "inline-flex", fontVariantNumeric: "tabular-nums" }} aria-label={value.toString()}>
+      {digits.map((digit, index) => (
+        <span key={`${index}-${digits.length}`}
+          style={{ display: "inline-block", height: "1em", overflow: "hidden", position: "relative", width: "0.62em" }}>
+          <span
+            aria-hidden="true"
+            key={`${index}-${digit}-${value}`}
+            style={{
+              display: "inline-block",
+              animation: "counter-digit-drop 240ms cubic-bezier(0.2,0.8,0.2,1) both",
+              animationDelay: `${index * 35}ms`,
+              willChange: "transform, opacity",
+            }}
+          >{digit}</span>
+        </span>
+      ))}
+    </span>
+  );
+}
+
+// ── Groups page ────────────────────────────────────────────────────
+function GroupsPage({
+  settings,
+  accessToken,
+  currentUserId,
+  initialSelectedGroupId,
+  onJoined,
+}: {
+  settings: AppSettings;
+  accessToken: string;
+  currentUserId: string;
+  initialSelectedGroupId: string | null;
+  onJoined: () => Promise<void>;
+}) {
+  const queryClient = useQueryClient();
+  const [groupName, setGroupName] = useState("");
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
+  const [inviteNote, setInviteNote] = useState("");
+  const [latestInvite, setLatestInvite] = useState<string | null>(null);
+  const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
+  const [requestCreatedMessage, setRequestCreatedMessage] = useState<string | null>(null);
+  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
+  const [isJoinModalOpen, setJoinModalOpen] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<MyGroupDto | null>(null);
+
+  const groups = useQuery({
+    queryKey: ["my-groups", settings, accessToken],
+    queryFn: () => getMyGroups(settings, accessToken),
+  });
+
+  useEffect(() => {
+    if (initialSelectedGroupId) setSelectedGroupId(initialSelectedGroupId);
+  }, [initialSelectedGroupId]);
+
+  const selectedGroup = useMemo(
+    () => groups.data?.find((g) => g.Id === selectedGroupId) ?? groups.data?.[0],
+    [groups.data, selectedGroupId],
+  );
+
+  const createGroupMutation = useMutation({
+    mutationFn: () => createGroup(settings, accessToken, groupName),
+    onSuccess: async (group) => {
+      setGroupName("");
+      setCreateModalOpen(false);
+      setSelectedGroupId(group.Id);
+      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+    },
+  });
+
+  const createInviteMutation = useMutation({
+    mutationFn: () => createInvite(settings, accessToken, selectedGroup!.Id, inviteNote),
+    onSuccess: (invite) => {
+      setInviteNote("");
+      setLatestInvite(invite.ApiUrl);
+    },
+  });
+
+  const requestStatusMutation = useMutation({
+    mutationFn: () => requestGroupStatusUpdate(settings, accessToken, selectedGroup!.Id),
+    onSuccess: (request) => {
+      setLatestStatusRequest(`${request.RequestedByUserName} requested status updates at ${formatDateTime(request.CreatedAt)}`);
+      setRequestCreatedMessage(`Status update requested for ${request.GroupName}.`);
+    },
+  });
+
+  useEffect(() => {
+    if (!requestCreatedMessage) return;
+    const timer = window.setTimeout(() => setRequestCreatedMessage(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [requestCreatedMessage]);
+
+  const removeMemberMutation = useMutation({
+    mutationFn: (userId: string) => removeGroupMember(settings, accessToken, selectedGroup!.Id, userId),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["my-groups"] }); },
+  });
+
+  const updateRoleMutation = useMutation({
+    mutationFn: (payload: { userId: string; role: "Member" | "Admin" }) =>
+      updateGroupMemberRole(settings, accessToken, selectedGroup!.Id, payload.userId, payload.role),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["my-groups"] }); },
+  });
+
+  const addMemberMutation = useMutation({
+    mutationFn: (userId: string) => addGroupMember(settings, accessToken, selectedGroup!.Id, userId),
+    onSuccess: async () => { await queryClient.invalidateQueries({ queryKey: ["my-groups"] }); },
+  });
+
+  const deleteGroupMutation = useMutation({
+    mutationFn: (groupId: string) => deleteGroup(settings, accessToken, groupId),
+    onSuccess: async (_, groupId) => {
+      setDeleteTarget(null);
+      setSelectedGroupId((current) => current === groupId ? null : current);
+      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+    },
+  });
+
+  function submitGroup(event: FormEvent) {
+    event.preventDefault();
+    if (groupName.trim()) createGroupMutation.mutate();
+  }
+
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "1fr", minWidth: 0 }}>
+      {/* Groups list panel */}
+      <div style={{ borderBottom: "1px solid var(--sp-border)" }}>
+        {/* Header */}
+        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--sp-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <div className="sp-section-head-label sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.12em" }}>
+            {groups.data?.length ?? 0} GROUPS
+          </div>
+          <div style={{ display: "flex", gap: 6 }}>
+            <button className="sp-btn-icon" onClick={() => setCreateModalOpen(true)} title="Create group" type="button">
+              <Plus size={14} />
+            </button>
+            <button className="sp-btn-icon" onClick={() => setJoinModalOpen(true)} title="Join with invite" type="button">
+              <Link size={14} />
+            </button>
+          </div>
+        </div>
+        {createGroupMutation.error && (
+          <div className="sp-error-box" style={{ margin: "8px 16px" }}>{createGroupMutation.error.message}</div>
+        )}
+        {/* Group list */}
+        <div className="sp-group-list">
+          {(groups.data ?? []).map((group) => {
+            const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
+            for (const m of group.Members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
+            const urgent = bd.NeedHelp > 0;
+            const isSelected = group.Id === selectedGroup?.Id;
+
+            return (
+              <div
+                key={group.Id}
+                className={`sp-group-row ${urgent ? "sp-group-row--urgent" : ""}`}
+                style={isSelected ? { borderLeft: "2px solid var(--sp-fg)", background: "var(--sp-raised)" } : {}}
+                onClick={() => setSelectedGroupId(group.Id)}
+              >
+                <div className="sp-group-row-top">
+                  <div className="sp-group-row-info">
+                    <span className="sp-callsign"
+                      style={urgent ? { borderColor: "var(--sp-help)", color: "var(--sp-help)" } : {}}>
+                      {groupCallsign(group.Name)}
+                    </span>
+                    <span className="sp-group-row-name">{group.Name}</span>
+                  </div>
+                  <span className="sp-group-row-count">{group.Members.length}</span>
+                </div>
+                <div className="sp-status-bar">
+                  {bd.NeedHelp  > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--help"    style={{ flex: bd.NeedHelp }} />}
+                  {bd.Unknown   > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--unknown"  style={{ flex: bd.Unknown }} />}
+                  {bd.InShelter > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--shelter"  style={{ flex: bd.InShelter }} />}
+                  {bd.Safe      > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--safe"     style={{ flex: bd.Safe }} />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Selected group detail */}
+      <div>
+        {selectedGroup ? (
+          <GroupDetails
+            group={selectedGroup}
+            canManage={selectedGroup.OwnerId === currentUserId}
+            inviteNote={inviteNote}
+            latestInvite={latestInvite}
+            latestStatusRequest={latestStatusRequest}
+            members={selectedGroup.Members}
+            onInviteNoteChange={setInviteNote}
+            onCreateInvite={() => createInviteMutation.mutate()}
+            isCreatingInvite={createInviteMutation.isPending}
+            onRequestStatus={() => requestStatusMutation.mutate()}
+            requestStatusError={requestStatusMutation.error?.message}
+            isRequestingStatus={requestStatusMutation.isPending}
+            onRemoveMember={(userId) => removeMemberMutation.mutate(userId)}
+            onUpdateRole={(userId, role) => updateRoleMutation.mutate({ userId, role })}
+            onAddMember={(userId) => addMemberMutation.mutate(userId)}
+            onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
+            memberActionError={addMemberMutation.error?.message ?? removeMemberMutation.error?.message ?? updateRoleMutation.error?.message}
+          />
+        ) : (
+          <div style={{ padding: "20px 16px" }}>
+            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>Create or select a group.</p>
+          </div>
+        )}
+      </div>
+
+      {/* Modals */}
+      {isCreateModalOpen && (
+        <SpModal title="CREATE GROUP" onClose={() => setCreateModalOpen(false)}>
+          <form style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={submitGroup}>
+            <SpField label="GROUP NAME" placeholder="New group name" value={groupName}
+              onChange={setGroupName} />
+            <button className="sp-btn-primary" disabled={createGroupMutation.isPending} type="submit">
+              CREATE GROUP
+            </button>
+          </form>
+        </SpModal>
+      )}
+
+      {isJoinModalOpen && (
+        <SpModal title="JOIN GROUP" onClose={() => setJoinModalOpen(false)}>
+          <JoinGroupForm
+            settings={settings}
+            accessToken={accessToken}
+            onJoined={async () => {
+              await onJoined();
+              await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+            }}
+          />
+        </SpModal>
+      )}
+
+      {deleteTarget && (
+        <DeleteGroupModal
+          group={deleteTarget}
+          error={deleteGroupMutation.error?.message}
+          isDeleting={deleteGroupMutation.isPending}
+          onClose={() => setDeleteTarget(null)}
+          onConfirm={() => deleteGroupMutation.mutate(deleteTarget.Id)}
+        />
+      )}
+      {requestCreatedMessage && <StatusChangedToast message={requestCreatedMessage} />}
+    </div>
+  );
+}
+
+// ── Group details ──────────────────────────────────────────────────
+function GroupDetails({
+  group,
+  canManage,
+  members,
+  inviteNote,
+  latestInvite,
+  latestStatusRequest,
+  isCreatingInvite,
+  onInviteNoteChange,
+  onCreateInvite,
+  onRequestStatus,
+  requestStatusError,
+  isRequestingStatus,
+  onRemoveMember,
+  onUpdateRole,
+  onAddMember,
+  onDeleteGroup,
+  memberActionError,
+}: {
+  group: MyGroupDto;
+  canManage: boolean;
+  members: GroupMemberDto[];
+  inviteNote: string;
+  latestInvite: string | null;
+  latestStatusRequest: string | null;
+  isCreatingInvite: boolean;
+  onInviteNoteChange: (v: string) => void;
+  onCreateInvite: () => void;
+  onRequestStatus: () => void;
+  requestStatusError?: string;
+  isRequestingStatus: boolean;
+  onRemoveMember: (userId: string) => void;
+  onUpdateRole: (userId: string, role: "Member" | "Admin") => void;
+  onAddMember: (userId: string) => void;
+  onDeleteGroup?: () => void;
+  memberActionError?: string;
+}) {
+  const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
+  const [memberId, setMemberId] = useState("");
+
+  const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
+  for (const m of members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
+
+  const filteredMembers = useMemo(() => {
+    return [...members]
+      .filter((m) => statusFilter === "All" || m.Status === statusFilter)
+      .sort((a, b) => {
+        const sc = statusFilter === "All" ? 0 : statusOrder(a.Status) - statusOrder(b.Status);
+        if (sc !== 0) return sc;
+        return new Date(b.LastActiveAt).getTime() - new Date(a.LastActiveAt).getTime();
+      });
+  }, [members, statusFilter]);
+
+  return (
+    <div>
+      {/* Group header */}
+      <div className="sp-group-header">
+        <div className="sp-group-header-top">
+          <span className="sp-callsign">{groupCallsign(group.Name)}</span>
+          <span className="sp-group-header-name">{group.Name}</span>
+          <span className="sp-mono sp-up"
+            style={{ fontSize: 9, color: canManage ? "var(--sp-safe)" : "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
+            {canManage ? "● OWNER" : "● MEMBER"}
+          </span>
+          {onDeleteGroup && (
+            <button className="sp-btn-icon" style={{ marginLeft: "auto", color: "var(--sp-help)", borderColor: "var(--sp-help-dim)" }}
+              onClick={onDeleteGroup} title="Delete group" type="button">
+              <Trash2 size={14} />
+            </button>
+          )}
+        </div>
+
+        {/* Status bar */}
+        <div className="sp-status-bar">
+          {bd.NeedHelp  > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--help"    style={{ flex: bd.NeedHelp }} />}
+          {bd.Unknown   > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--unknown"  style={{ flex: bd.Unknown }} />}
+          {bd.InShelter > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--shelter"  style={{ flex: bd.InShelter }} />}
+          {bd.Safe      > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--safe"     style={{ flex: bd.Safe }} />}
+        </div>
+
+        <div className="sp-group-breakdown">
+          {bd.NeedHelp  > 0 && <span style={{ color: "var(--sp-help)" }}>● {bd.NeedHelp} help</span>}
+          {bd.Unknown   > 0 && <span style={{ color: "var(--sp-unknown)" }}>● {bd.Unknown} unknown</span>}
+          {bd.InShelter > 0 && <span style={{ color: "var(--sp-shelter)" }}>● {bd.InShelter} in shelter</span>}
+          <span style={{ color: "var(--sp-safe)" }}>● {bd.Safe} safe</span>
+          <span style={{ color: "var(--sp-fg-3)" }}>{members.length} total</span>
+        </div>
+      </div>
+
+      {/* Action row */}
+      <div className="sp-action-row">
+        <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
+          <Send size={13} /> REQUEST STATUS
+        </button>
+        {canManage && (
+          <button className="sp-btn-icon" onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite" type="button">
+            <Copy size={14} />
+          </button>
+        )}
+      </div>
+
+      {/* Errors */}
+      {latestStatusRequest && (
+        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+          <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
+        </div>
+      )}
+      {requestStatusError && (
+        <div className="sp-error-box" style={{ margin: "8px 14px" }}>{requestStatusError}</div>
+      )}
+      {memberActionError && (
+        <div className="sp-error-box" style={{ margin: "8px 14px" }}>{memberActionError}</div>
+      )}
+
+      {/* Invite link */}
+      {latestInvite && (
+        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+          <div className="sp-invite-box">
+            <div className="sp-invite-url">{latestInvite}</div>
+            <div className="sp-invite-actions">
+              <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
+                onClick={() => { void navigator.clipboard.writeText(latestInvite); }} type="button">
+                <Copy size={13} />
+                <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Copy</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Add member input (admin only) */}
+      {canManage && (
+        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+          <div className="sp-input-row">
+            <input className="sp-text-input" placeholder="Invite note"
+              value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
+            <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
+              <Copy size={14} />
+            </button>
+          </div>
+          <div className="sp-input-row" style={{ marginTop: 8 }}>
+            <input className="sp-text-input" placeholder="User ID to add"
+              value={memberId} onChange={(e) => setMemberId(e.target.value)} />
+            <button className="sp-btn-icon" disabled={!memberId.trim()}
+              onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Filter chips */}
+      <div className="sp-filter-chips">
+        <FilterChip label="ALL" count={members.length} active={statusFilter === "All"} onClick={() => setStatusFilter("All")} />
+        <FilterChip label="HELP"    count={bd.NeedHelp}  status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
+        <FilterChip label="SHLT"    count={bd.InShelter} status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
+        <FilterChip label="SAFE"    count={bd.Safe}      status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
+        <FilterChip label="UNK"     count={bd.Unknown}   status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
+      </div>
+
+      {/* Member list */}
+      <div>
+        {filteredMembers.map((member) => (
+          <MemberRow
+            key={member.Id}
+            member={member}
+            onRemove={member.CanManage ? () => onRemoveMember(member.Id) : undefined}
+            onToggleAdmin={canManage && member.Role !== "Owner"
+              ? () => onUpdateRole(member.Id, member.Role === "Admin" ? "Member" : "Admin")
+              : undefined}
+          />
+        ))}
+        {filteredMembers.length === 0 && (
+          <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", padding: "12px 14px" }}>
+            No users with this status.
+          </p>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FilterChip({
+  label, count, status, active, onClick,
+}: {
+  label: string; count: number; status?: UserStatus; active: boolean; onClick: () => void;
+}) {
+  const key = status ? statusKey(status) : null;
+  return (
+    <button
+      className={`sp-filter-chip ${active ? "active" : ""} ${key ? `sp-filter-chip--${key}` : ""}`}
+      onClick={onClick} type="button"
+    >
+      {key && !active && <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--sp-${key})` }} />}
+      {label}
+      <span style={{ opacity: 0.7 }}>{count}</span>
+    </button>
+  );
+}
+
+// ── Member row ─────────────────────────────────────────────────────
+function MemberRow({
+  member,
+  onRemove,
+  onToggleAdmin,
+}: {
+  member: GroupMemberDto;
+  onRemove?: () => void;
+  onToggleAdmin?: () => void;
+}) {
+  const key = statusKey(member.Status);
+  const initials = userInitials(member.UserName || member.Id);
+  const colorVar = `var(--sp-${key})`;
+
+  return (
+    <div className={`sp-member-row ${member.Status === "NeedHelp" ? "sp-member-row--urgent" : ""}`}>
+      {/* Avatar */}
+      <span
+        className="sp-avatar"
+        style={{ width: 36, height: 36, fontSize: 12, borderRadius: 0 }}
+      >
+        {initials}
+        <span
+          className="sp-avatar-indicator"
+          style={{ width: 10, height: 10, background: colorVar }}
+        />
+      </span>
+
+      <div className="sp-member-info">
+        <span className="sp-member-name">{member.UserName || member.Id}</span>
+        <div className="sp-member-meta">
+          <span>{member.Role || "Member"}</span>
+          <span>·</span>
+          <span>{formatDateTime(member.LastActiveAt)}</span>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+        <StatusChip status={member.Status} />
+        {onToggleAdmin && (
+          <button className="sp-btn-icon" style={{ width: 28, height: 28 }}
+            onClick={onToggleAdmin} title={member.Role === "Admin" ? "Make member" : "Make admin"} type="button">
+            <ShieldCheck size={13} />
+          </button>
+        )}
+        {onRemove && (
+          <button className="sp-btn-icon" style={{ width: 28, height: 28, borderColor: "var(--sp-help-dim)", color: "var(--sp-help)" }}
+            onClick={onRemove} title="Remove from group" type="button">
+            <Trash2 size={13} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function StatusChip({ status }: { status: UserStatus }) {
+  const key = statusKey(status);
+  return (
+    <span className={`sp-status-chip sp-status-chip--${key}`}>
+      <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--sp-${key})` }} />
+      {STATUS_SHORT[status]}
+    </span>
+  );
+}
+
+// ── Settings page ──────────────────────────────────────────────────
+function SettingsPage({
+  draftSettings,
+  setDraftSettings,
+  settings,
+  accessToken,
+  currentUser,
+  onSubmit,
+}: {
+  draftSettings: AppSettings;
+  setDraftSettings: (s: AppSettings) => void;
+  settings: AppSettings;
+  accessToken: string;
+  currentUser: UserDto;
+  onSubmit: (e: FormEvent) => void;
+}) {
+  return (
+    <div>
+      {/* Profile card */}
+      <div className="sp-profile-card" style={{ borderTop: "1px solid var(--sp-border)" }}>
+        <span className="sp-avatar" style={{ width: 48, height: 48, fontSize: 16, borderRadius: 0 }}>
+          {userInitials(currentUser.UserName || "")}
+          <span className="sp-avatar-indicator"
+            style={{ width: 12, height: 12, background: `var(--sp-${statusKey(currentUser.Status)})` }} />
+        </span>
+        <div className="sp-profile-info">
+          <span className="sp-profile-name">{currentUser.UserName}</span>
+          <span className="sp-profile-email">{currentUser.Id}</span>
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            <StatusChip status={currentUser.Status} />
+          </div>
+        </div>
+      </div>
+
+      {/* API settings section */}
+      <div className="sp-settings-section">
+        <div className="sp-settings-section-head">
+          <div className="sp-section-head">
+            <span className="sp-section-head-label">
+              <span className="sp-section-head-code">01</span>CONNECTIVITY
+            </span>
+          </div>
+        </div>
+        <form className="sp-settings-form" onSubmit={onSubmit}
+          style={{ borderTop: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
+          <SpField label="API URL" placeholder="Same origin"
+            value={draftSettings.apiBaseUrl}
+            onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
+          <SpField label="DEV USER ID" value={draftSettings.devUserId}
+            onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
+          <SpField label="DEV USER NAME" value={draftSettings.devUserName}
+            onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
+          <div>
+            <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
+              OVERVIEW BLOCK SIZE
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {(["small", "medium", "large"] as const).map((size) => (
+                <button
+                  key={size}
+                  type="button"
+                  className="sp-filter-chip"
+                  style={draftSettings.overviewBlockSize === size
+                    ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
+                    : {}}
+                  onClick={() => setDraftSettings({ ...draftSettings, overviewBlockSize: size })}
+                >
+                  {size.toUpperCase()}
+                </button>
+              ))}
+            </div>
+          </div>
+          <button className="sp-field-save-btn" type="submit">
+            <Save size={13} /> SAVE
+          </button>
+        </form>
+      </div>
+
+      {/* Telegram section */}
+      <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
+    </div>
+  );
+}
+
+function TelegramLinkPanel({
+  settings,
+  accessToken,
+  currentUser,
+}: {
+  settings: AppSettings;
+  accessToken: string;
+  currentUser: UserDto;
+}) {
+  const queryClient = useQueryClient();
+  const [codeId, setCodeId] = useState<string | null>(null);
+
+  const createCode = useMutation({
+    mutationFn: () => createTelegramLinkCode(settings, accessToken),
+    onSuccess: (code) => setCodeId(code.Id),
+  });
+
+  const disconnect = useMutation({
+    mutationFn: () => disconnectTelegram(settings, accessToken),
+    onSuccess: () => {
+      setCodeId(null);
+      void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+    },
+  });
+
+  const linkStatus = useQuery({
+    queryKey: ["telegram-link-status", settings, accessToken, codeId],
+    queryFn: () => getTelegramLinkStatus(settings, accessToken, codeId!),
+    enabled: Boolean(codeId),
+    refetchInterval: (query) => query.state.data?.IsConsumed ? false : 2500,
+  });
+
+  useEffect(() => {
+    if (!linkStatus.data?.IsConsumed) return;
+    void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+  }, [linkStatus.data?.IsConsumed, queryClient]);
+
+  return (
+    <div className="sp-settings-section">
+      <div className="sp-settings-section-head">
+        <div className="sp-section-head">
+          <span className="sp-section-head-label">
+            <span className="sp-section-head-code">02</span>TELEGRAM
+          </span>
+          <span className="sp-mono" style={{ fontSize: 10, color: currentUser.ChatId ? "var(--sp-shelter)" : "var(--sp-fg-3)" }}>
+            {currentUser.ChatId ? "● LINKED" : "● NOT LINKED"}
+          </span>
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)", display: "flex", flexDirection: "column", gap: 10 }}>
+        {currentUser.ChatId ? (
+          <div style={{ padding: 12, border: "1px solid var(--sp-shelter-dim)", background: "var(--sp-shelter-bg)", display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{ width: 32, height: 32, border: "1px solid var(--sp-shelter)", color: "var(--sp-shelter)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>T</span>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>Telegram is linked</div>
+              <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>ChatId: {currentUser.ChatId}</div>
+            </div>
+            <button className="sp-btn-danger" disabled={disconnect.isPending}
+              onClick={() => { if (window.confirm("Disconnect Telegram?")) disconnect.mutate(); }} type="button">
+              UNLINK
+            </button>
+          </div>
+        ) : (
+          <button className="sp-btn-action" disabled={createCode.isPending} onClick={() => createCode.mutate()} type="button">
+            <TelegramIcon /> LINK TELEGRAM
+          </button>
+        )}
+
+        {createCode.data && (
+          <div style={{ padding: 12, border: "1px solid var(--sp-border)", background: "var(--sp-bg)" }}>
+            <p className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>SEND TO BOT</p>
+            <p className="sp-mono" style={{ fontSize: 18, color: "var(--sp-fg)", marginTop: 6 }}>/link {createCode.data.Code}</p>
+            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", marginTop: 4 }}>
+              Expires: {formatDateTime(createCode.data.ExpiresAt)}
+            </p>
+            {linkStatus.data?.IsConsumed && (
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-safe)", marginTop: 6 }}>● Telegram account connected.</p>
+            )}
+            {linkStatus.data?.IsExpired && !linkStatus.data.IsConsumed && (
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-help)", marginTop: 6 }}>● Code expired. Create a new one.</p>
+            )}
+          </div>
+        )}
+
+        {(createCode.error || linkStatus.error || disconnect.error) && (
+          <div className="sp-error-box">
+            {createCode.error?.message ?? linkStatus.error?.message ?? disconnect.error?.message}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Join group form ────────────────────────────────────────────────
 function JoinGroupForm({
   settings,
   accessToken,
@@ -503,565 +1480,42 @@ function JoinGroupForm({
   }
 
   return (
-    <div>
-      <form className="flex flex-col gap-2 sm:flex-row" onSubmit={submitPreview}>
-        <input
-          className="field"
-          onChange={(event) => setRawInvite(event.target.value)}
-          placeholder="Paste invite token or invite URL"
-          value={rawInvite}
-        />
-        <button className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-950" type="submit">
-          Preview
-        </button>
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <form style={{ display: "flex", flexDirection: "column", gap: 8 }} onSubmit={submitPreview}>
+        <input className="sp-text-input" value={rawInvite}
+          onChange={(e) => setRawInvite(e.target.value)}
+          placeholder="Paste invite token or URL" />
+        <button className="sp-btn-primary" type="submit">PREVIEW</button>
       </form>
-      {token && <p className="mt-2 break-all text-xs text-neutral-500">Token: {token}</p>}
-      {preview.isFetching && <p className="mt-4 text-sm text-neutral-400">Checking invite...</p>}
-      {preview.error && <p className="mt-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{preview.error.message}</p>}
+      {token && <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", wordBreak: "break-all" }}>Token: {token}</p>}
+      {preview.isFetching && <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>Checking invite…</p>}
+      {preview.error && <div className="sp-error-box">{preview.error.message}</div>}
       {preview.data && (
-        <div className="mt-4 rounded-md border border-neutral-800 bg-neutral-950 p-4">
-          <p className="text-sm text-neutral-400">Group</p>
-          <h3 className="mt-1 text-xl font-semibold">{preview.data.GroupName}</h3>
-          <p className="mt-1 break-all text-xs text-neutral-500">{preview.data.GroupId}</p>
+        <div style={{ padding: 14, border: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
+          <p className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>GROUP</p>
+          <h3 style={{ fontSize: 18, fontWeight: 700, margin: "6px 0 4px" }}>{preview.data.GroupName}</h3>
+          <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", wordBreak: "break-all" }}>{preview.data.GroupId}</p>
           {preview.data.IsRevoked ? (
-            <p className="mt-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">This invite was revoked.</p>
+            <div className="sp-error-box" style={{ marginTop: 10 }}>This invite was revoked.</div>
           ) : (
-            <button
-              className="mt-4 rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-950"
-              disabled={acceptMutation.isPending}
-              onClick={() => acceptMutation.mutate()}
-              type="button"
-            >
-              Join group
+            <button className="sp-btn-primary" disabled={acceptMutation.isPending}
+              onClick={() => acceptMutation.mutate()} style={{ marginTop: 12 }} type="button">
+              JOIN GROUP
             </button>
           )}
         </div>
       )}
-      {acceptMutation.error && <p className="mt-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{acceptMutation.error.message}</p>}
-      {acceptedGroupName && <p className="mt-4 rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-100">Joined {acceptedGroupName}. Open Overview to see it in your groups.</p>}
-    </div>
-  );
-}
-
-function Modal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
-  return (
-    <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="modal-panel" aria-modal="true" role="dialog" aria-label={title} onMouseDown={(event) => event.stopPropagation()}>
-        <div className="mb-4 flex items-center justify-between gap-3">
-          <h2 className="text-lg font-semibold">{title}</h2>
-          <button className="icon-button" onClick={onClose} title="Close" type="button">
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-        {children}
-      </section>
-    </div>
-  );
-}
-
-function parseInviteToken(value: string) {
-  var trimmed = value.trim();
-  if (!trimmed)
-    return "";
-
-  var joinPrefix = "join_";
-  var joinIndex = trimmed.indexOf(joinPrefix);
-  if (joinIndex >= 0)
-    return trimmed.slice(joinIndex + joinPrefix.length).split(/[/?#&\s]/)[0];
-
-  try {
-    var url = new URL(trimmed);
-    var parts = url.pathname.split('/').filter(Boolean);
-    if (parts.length > 0)
-      return parts[parts.length - 1];
-  } catch {
-  }
-
-  return trimmed.split(/[/?#&\s]/)[0];
-}
-
-function StatusFooter({
-  activeStatus,
-  isUpdating,
-  onUpdateStatus,
-  error,
-  connectionState,
-}: {
-  activeStatus: UserStatus;
-  isUpdating: boolean;
-  onUpdateStatus: (status: UserStatus) => void;
-  error?: string;
-  connectionState: string;
-}) {
-  const connectionTone = connectionState.toLowerCase();
-  return (
-    <footer className="status-footer">
-      <div className="status-footer-meta">
-        <span className={`connection-state ${connectionTone}`}>{connectionState}</span>
-        {error && <span className="status-footer-error">{error}</span>}
-      </div>
-      <div className="status-grid">
-        {statuses.map((status) => {
-          const Icon = status.icon;
-          const isActive = activeStatus === status.value;
-          return (
-            <button
-              className={`status-button ${status.tone} ${isActive ? "is-active" : ""}`}
-              disabled={isUpdating}
-              key={status.value}
-              onClick={() => onUpdateStatus(status.value)}
-              type="button"
-            >
-              <Icon className="h-8 w-8 shrink-0" />
-              <span>{status.label}</span>
-            </button>
-          );
-        })}
-      </div>
-    </footer>
-  );
-}
-
-function OverviewPage({
-  groups,
-  isLoading,
-  onRefresh,
-}: {
-  groups: MyGroupDto[];
-  isLoading: boolean;
-  onRefresh: () => void;
-}) {
-  var totals = { Unknown: 0, Safe: 0, NeedHelp: 0, InShelter: 0 } as Record<UserStatus, number>;
-  var countedUserIds = new Set<string>();
-  for (var group of groups) {
-    for (var member of group.Members) {
-      if (countedUserIds.has(member.Id))
-        continue;
-
-      countedUserIds.add(member.Id);
-      totals[member.Status] = (totals[member.Status] ?? 0) + 1;
-    }
-  }
-
-  return (
-    <section className="min-w-0 lg:col-span-2">
-      <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <h2 className="text-sm font-semibold text-neutral-300">Overview</h2>
-        <button className="icon-button" onClick={onRefresh} title="Refresh overview" type="button">
-          <RefreshCw className="h-4 w-4" />
-        </button>
-      </div>
-      {isLoading && <p className="text-sm text-neutral-400">Loading overview...</p>}
-      {!isLoading && groups.length === 0 && <p className="text-sm text-neutral-400">No groups for this user yet.</p>}
-      <div className="overview-status-grid">
-        <OverviewStatusBlock label="Safe" status="Safe" value={totals.Safe} />
-        <OverviewStatusBlock label="Shelter" status="InShelter" value={totals.InShelter} />
-        <OverviewStatusBlock label="Help" status="NeedHelp" value={totals.NeedHelp} />
-        <OverviewStatusBlock label="Unknown" status="Unknown" value={totals.Unknown} />
-      </div>
-    </section>
-  );
-}
-
-function OverviewStatusBlock({ label, status, value }: { label: string; status: UserStatus; value: number }) {
-  return (
-    <section className={`overview-status-block ${status.toLowerCase()}`}>
-      <span className={`status-tile ${status.toLowerCase()}`} />
-      <span className="text-sm font-semibold text-neutral-300">{label}</span>
-      <AnimatedCounter value={value} />
-    </section>
-  );
-}
-
-function AnimatedCounter({ value }: { value: number }) {
-  var digits = value.toString().split("");
-
-  return (
-    <strong className="animated-counter" aria-label={value.toString()}>
-      {digits.map((digit, index) => (
-        <span className="counter-digit-slot" key={`${index}-${digits.length}`}>
-          <span
-            aria-hidden="true"
-            className="counter-digit"
-            key={`${index}-${digit}-${value}`}
-            style={{ animationDelay: `${index * 35}ms` }}
-          >
-            {digit}
-          </span>
-        </span>
-      ))}
-    </strong>
-  );
-}
-
-function GroupsPage({
-  settings,
-  accessToken,
-  currentUserId,
-  initialSelectedGroupId,
-  onJoined,
-}: {
-  settings: AppSettings;
-  accessToken: string;
-  currentUserId: string;
-  initialSelectedGroupId: string | null;
-  onJoined: () => Promise<void>;
-}) {
-  const queryClient = useQueryClient();
-  const [groupName, setGroupName] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
-  const [inviteNote, setInviteNote] = useState("");
-  const [latestInvite, setLatestInvite] = useState<string | null>(null);
-  const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
-  const [requestCreatedMessage, setRequestCreatedMessage] = useState<string | null>(null);
-  const [isCreateModalOpen, setCreateModalOpen] = useState(false);
-  const [isJoinModalOpen, setJoinModalOpen] = useState(false);
-  const [deleteTarget, setDeleteTarget] = useState<MyGroupDto | null>(null);
-
-  const groups = useQuery({
-    queryKey: ["my-groups", settings, accessToken],
-    queryFn: () => getMyGroups(settings, accessToken),
-  });
-
-  useEffect(() => {
-    if (initialSelectedGroupId)
-      setSelectedGroupId(initialSelectedGroupId);
-  }, [initialSelectedGroupId]);
-
-  const selectedGroup = useMemo(
-    () => groups.data?.find((group) => group.Id === selectedGroupId) ?? groups.data?.[0],
-    [groups.data, selectedGroupId],
-  );
-
-  const createGroupMutation = useMutation({
-    mutationFn: () => createGroup(settings, accessToken, groupName),
-    onSuccess: async (group) => {
-      setGroupName("");
-      setCreateModalOpen(false);
-      setSelectedGroupId(group.Id);
-      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
-    },
-  });
-
-  const createInviteMutation = useMutation({
-    mutationFn: () => createInvite(settings, accessToken, selectedGroup!.Id, inviteNote),
-    onSuccess: (invite) => {
-      setInviteNote("");
-      setLatestInvite(invite.ApiUrl);
-    },
-  });
-
-  const requestStatusMutation = useMutation({
-    mutationFn: () => requestGroupStatusUpdate(settings, accessToken, selectedGroup!.Id),
-    onSuccess: (request) => {
-      setLatestStatusRequest(`${request.RequestedByUserName} requested status updates at ${formatDateTime(request.CreatedAt)}`);
-      setRequestCreatedMessage(`Status update requested for ${request.GroupName}.`);
-    },
-  });
-
-  useEffect(() => {
-    if (!requestCreatedMessage)
-      return;
-
-    const timer = window.setTimeout(() => setRequestCreatedMessage(null), 3000);
-    return () => window.clearTimeout(timer);
-  }, [requestCreatedMessage]);
-
-  const removeMemberMutation = useMutation({
-    mutationFn: (userId: string) => removeGroupMember(settings, accessToken, selectedGroup!.Id, userId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
-    },
-  });
-
-  const updateRoleMutation = useMutation({
-    mutationFn: (payload: { userId: string; role: "Member" | "Admin" }) =>
-      updateGroupMemberRole(settings, accessToken, selectedGroup!.Id, payload.userId, payload.role),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
-    },
-  });
-
-  const addMemberMutation = useMutation({
-    mutationFn: (userId: string) => addGroupMember(settings, accessToken, selectedGroup!.Id, userId),
-    onSuccess: async () => {
-      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
-    },
-  });
-
-  const deleteGroupMutation = useMutation({
-    mutationFn: (groupId: string) => deleteGroup(settings, accessToken, groupId),
-    onSuccess: async (_, groupId) => {
-      setDeleteTarget(null);
-      setSelectedGroupId((current) => current === groupId ? null : current);
-      await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
-    },
-  });
-
-  function submitGroup(event: FormEvent) {
-    event.preventDefault();
-    if (groupName.trim())
-      createGroupMutation.mutate();
-  }
-
-  return (
-    <section className="grid min-w-0 gap-4 lg:col-span-2 lg:grid-cols-[360px_minmax(0,1fr)]">
-      <div className="rounded-md border border-neutral-800 bg-neutral-900 p-4">
-        <div className="flex items-center justify-between gap-2">
-          <h2 className="text-sm font-semibold text-neutral-300">Groups</h2>
-          <div className="flex gap-2">
-            <button className="icon-button strong" onClick={() => setCreateModalOpen(true)} title="Create group" type="button">
-            <Plus className="h-4 w-4" />
-            </button>
-            <button className="icon-button" onClick={() => setJoinModalOpen(true)} title="Join group by invite" type="button">
-              <Link className="h-4 w-4" />
-            </button>
-          </div>
-        </div>
-        {createGroupMutation.error && <p className="mt-2 text-sm text-red-300">{createGroupMutation.error.message}</p>}
-        <div className="group-button-list mt-4">
-          {(groups.data ?? []).map((group) => (
-            <button
-              className={`list-button ${group.Id === selectedGroup?.Id ? "selected" : ""}`}
-              key={group.Id}
-              onClick={() => setSelectedGroupId(group.Id)}
-              type="button"
-            >
-              <span className="block truncate">{group.Name}</span>
-              {group.OwnerId !== currentUserId && <span className="mt-1 block text-xs text-neutral-500">Joined group</span>}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <div className="rounded-md border border-neutral-800 bg-neutral-900 p-4">
-        {selectedGroup ? (
-          <GroupDetails
-            group={selectedGroup}
-            canManage={selectedGroup.OwnerId === currentUserId}
-            inviteNote={inviteNote}
-            latestInvite={latestInvite}
-            latestStatusRequest={latestStatusRequest}
-            members={selectedGroup.Members}
-            blockSize={settings.overviewBlockSize}
-            onInviteNoteChange={setInviteNote}
-            onCreateInvite={() => createInviteMutation.mutate()}
-            isCreatingInvite={createInviteMutation.isPending}
-            onRequestStatus={() => requestStatusMutation.mutate()}
-            requestStatusError={requestStatusMutation.error?.message}
-            isRequestingStatus={requestStatusMutation.isPending}
-            onRemoveMember={(userId) => removeMemberMutation.mutate(userId)}
-            onUpdateRole={(userId, role) => updateRoleMutation.mutate({ userId, role })}
-            onAddMember={(userId) => addMemberMutation.mutate(userId)}
-            onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
-            memberActionError={addMemberMutation.error?.message ?? removeMemberMutation.error?.message ?? updateRoleMutation.error?.message}
-          />
-        ) : (
-          <p className="text-sm text-neutral-400">Create or select a group.</p>
-        )}
-      </div>
-
-      {isCreateModalOpen && (
-        <Modal title="Create group" onClose={() => setCreateModalOpen(false)}>
-          <form className="grid gap-3" onSubmit={submitGroup}>
-            <label className="label">
-              Group name
-              <input className="field" autoFocus onChange={(event) => setGroupName(event.target.value)} placeholder="New group name" value={groupName} />
-            </label>
-            <button className="rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-950" disabled={createGroupMutation.isPending} type="submit">
-              Create group
-            </button>
-          </form>
-        </Modal>
-      )}
-
-      {isJoinModalOpen && (
-        <Modal title="Join group" onClose={() => setJoinModalOpen(false)}>
-          <JoinGroupForm
-            settings={settings}
-            accessToken={accessToken}
-            onJoined={async () => {
-              await onJoined();
-              await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
-            }}
-          />
-        </Modal>
-      )}
-
-      {deleteTarget && (
-        <DeleteGroupModal
-          group={deleteTarget}
-          error={deleteGroupMutation.error?.message}
-          isDeleting={deleteGroupMutation.isPending}
-          onClose={() => setDeleteTarget(null)}
-          onConfirm={() => deleteGroupMutation.mutate(deleteTarget.Id)}
-        />
-      )}
-      {requestCreatedMessage && <StatusChangedToast message={requestCreatedMessage} />}
-    </section>
-  );
-}
-
-function GroupDetails({
-  group,
-  canManage,
-  members,
-  inviteNote,
-  latestInvite,
-  latestStatusRequest,
-  isCreatingInvite,
-  blockSize,
-  onInviteNoteChange,
-  onCreateInvite,
-  onRequestStatus,
-  requestStatusError,
-  isRequestingStatus,
-  onRemoveMember,
-  onUpdateRole,
-  onAddMember,
-  onDeleteGroup,
-  memberActionError,
-}: {
-  group: MyGroupDto;
-  canManage: boolean;
-  members: GroupMemberDto[];
-  inviteNote: string;
-  latestInvite: string | null;
-  latestStatusRequest: string | null;
-  isCreatingInvite: boolean;
-  blockSize: AppSettings["overviewBlockSize"];
-  onInviteNoteChange: (value: string) => void;
-  onCreateInvite: () => void;
-  onRequestStatus: () => void;
-  requestStatusError?: string;
-  isRequestingStatus: boolean;
-  onRemoveMember: (userId: string) => void;
-  onUpdateRole: (userId: string, role: "Member" | "Admin") => void;
-  onAddMember: (userId: string) => void;
-  onDeleteGroup?: () => void;
-  memberActionError?: string;
-}) {
-  const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
-  const [viewMode, setViewMode] = useState<"list" | "compact">("list");
-  const [memberId, setMemberId] = useState("");
-  const filteredMembers = useMemo(() => {
-    return [...members]
-      .filter((member) => statusFilter === "All" || member.Status === statusFilter)
-      .sort((left, right) => {
-        const statusCompare = statusFilter === "All" ? 0 : statusOrder(left.Status) - statusOrder(right.Status);
-        if (statusCompare !== 0)
-          return statusCompare;
-
-        return new Date(right.LastActiveAt).getTime() - new Date(left.LastActiveAt).getTime();
-      });
-  }, [members, statusFilter]);
-
-  return (
-    <div>
-      <div className="group-detail-header mb-4">
-        <div>
-          <div className="flex flex-wrap items-center gap-2">
-            <h2 className="text-lg font-semibold">{group.Name}</h2>
-            {onDeleteGroup && (
-              <button className="icon-button compact danger" onClick={onDeleteGroup} title="Delete group" type="button">
-                <Trash2 className="h-4 w-4" />
-              </button>
-            )}
-          </div>
-          <p className="text-sm text-neutral-400">Owner: {group.OwnerId}</p>
-        </div>
-        <div className="group-actions">
-          <button className="group-action-request" disabled={isRequestingStatus} onClick={onRequestStatus} title="Request status update" type="button">
-            <Send className="h-4 w-4" />
-            <span>Request status updates</span>
-          </button>
-          {canManage ? (
-            <>
-              <div className="group-action-row">
-                <input className="field" onChange={(event) => setMemberId(event.target.value)} placeholder="User id" value={memberId} />
-                <button
-                  className="icon-button"
-                  disabled={!memberId.trim()}
-                  onClick={() => {
-                    onAddMember(memberId.trim());
-                    setMemberId("");
-                  }}
-                  title="Add user"
-                  type="button"
-                >
-                  <Plus className="h-4 w-4" />
-                </button>
-              </div>
-              <div className="group-action-row">
-                <input className="field" onChange={(event) => onInviteNoteChange(event.target.value)} placeholder="Invite note" value={inviteNote} />
-                <button className="icon-button strong" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
-                  <Copy className="h-4 w-4" />
-                </button>
-              </div>
-            </>
-          ) : (
-            <span className="rounded-md border border-neutral-700 px-2 py-1 text-xs text-neutral-400">Member</span>
-          )}
-        </div>
-      </div>
-      {latestInvite && <p className="mb-4 break-all rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm">{latestInvite}</p>}
-      {latestStatusRequest && <p className="mb-4 rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-100">{latestStatusRequest}</p>}
-      {requestStatusError && <p className="mb-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{requestStatusError}</p>}
-      {memberActionError && <p className="mb-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{memberActionError}</p>}
-      <div className="mb-3 segmented-control w-fit">
-        <button className={`tab-button ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")} type="button">
-          List
-        </button>
-        <button className={`tab-button ${viewMode === "compact" ? "active" : ""}`} onClick={() => setViewMode("compact")} type="button">
-          Compact
-        </button>
-      </div>
-      <div className="mb-3 flex flex-wrap gap-2">
-        <StatusFilterButton active={statusFilter === "All"} label="All" onClick={() => setStatusFilter("All")} />
-        <StatusFilterButton active={statusFilter === "NeedHelp"} label="Help" status="NeedHelp" onClick={() => setStatusFilter("NeedHelp")} />
-        <StatusFilterButton active={statusFilter === "InShelter"} label="Shelter" status="InShelter" onClick={() => setStatusFilter("InShelter")} />
-        <StatusFilterButton active={statusFilter === "Safe"} label="Safe" status="Safe" onClick={() => setStatusFilter("Safe")} />
-        <StatusFilterButton active={statusFilter === "Unknown"} label="Unknown" status="Unknown" onClick={() => setStatusFilter("Unknown")} />
-      </div>
-      {viewMode === "compact" ? (
-        <GroupCompactView blockSize={blockSize} members={filteredMembers} />
-      ) : (
-        <div className="divide-y divide-neutral-800 rounded-md border border-neutral-800">
-          {filteredMembers.map((member) => (
-            <MemberRow
-              member={member}
-              key={member.Id}
-              onRemove={member.CanManage ? () => onRemoveMember(member.Id) : undefined}
-              onToggleAdmin={canManage && member.Role !== "Owner" ? () => onUpdateRole(member.Id, member.Role === "Admin" ? "Member" : "Admin") : undefined}
-            />
-          ))}
-          {filteredMembers.length === 0 && <p className="px-3 py-4 text-sm text-neutral-400">No users with this status.</p>}
+      {acceptMutation.error && <div className="sp-error-box">{acceptMutation.error.message}</div>}
+      {acceptedGroupName && (
+        <div style={{ padding: "10px 12px", border: "1px solid var(--sp-safe-dim)", background: "var(--sp-safe-bg)", color: "var(--sp-safe)", fontSize: 12 }}>
+          Joined {acceptedGroupName}.
         </div>
       )}
     </div>
   );
 }
 
-function GroupCompactView({ blockSize, members }: { blockSize: AppSettings["overviewBlockSize"]; members: GroupMemberDto[] }) {
-  if (members.length === 0)
-    return <p className="rounded-md border border-neutral-800 px-3 py-4 text-sm text-neutral-400">No users with this status.</p>;
-
-  return (
-    <div className={`group-compact-view overview-size-${blockSize}`}>
-      <div className="status-tile-grid">
-        {members.map((member) => (
-          <span
-            aria-label={`${member.UserName || member.Id}: ${member.Status}`}
-            className={`status-tile ${member.Status.toLowerCase()}`}
-            key={member.Id}
-            title={`${member.UserName || member.Id} - ${member.Status}`}
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
+// ── Delete group modal ─────────────────────────────────────────────
 function DeleteGroupModal({
   group,
   isDeleting,
@@ -1079,269 +1533,143 @@ function DeleteGroupModal({
   const canDelete = confirmation === group.Name;
 
   return (
-    <Modal title="Delete group" onClose={onClose}>
-      <div className="grid gap-4">
-        <p className="text-sm text-neutral-300">
+    <SpModal title="DELETE GROUP" onClose={onClose}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+        <p style={{ fontSize: 13, color: "var(--sp-fg-2)" }}>
           This will delete the group, remove active memberships, and revoke active invites.
         </p>
-        <label className="label">
-          Type <span className="font-mono text-neutral-100">{group.Name}</span> to confirm
-          <input className="field" autoFocus onChange={(event) => setConfirmation(event.target.value)} value={confirmation} />
-        </label>
-        {error && <p className="rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{error}</p>}
-        <div className="flex flex-wrap justify-end gap-2">
-          <button className="rounded-md border border-neutral-700 px-3 py-2 text-sm" onClick={onClose} type="button">
-            Cancel
-          </button>
-          <button
-            className="rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm font-semibold text-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-            disabled={!canDelete || isDeleting}
-            onClick={onConfirm}
-            type="button"
-          >
-            {isDeleting ? "Deleting..." : "Delete group"}
-          </button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-function statusOrder(status: UserStatus) {
-  switch (status) {
-    case "NeedHelp":
-      return 0;
-    case "InShelter":
-      return 1;
-    case "Safe":
-      return 2;
-    case "Unknown":
-      return 3;
-  }
-}
-
-function StatusFilterButton({
-  active,
-  label,
-  status,
-  onClick,
-}: {
-  active: boolean;
-  label: string;
-  status?: UserStatus;
-  onClick: () => void;
-}) {
-  return (
-    <button className={`status-filter-button ${active ? "active" : ""} ${status ? status.toLowerCase() : ""}`} onClick={onClick} type="button">
-      {label}
-    </button>
-  );
-}
-
-function SettingsPage({
-  draftSettings,
-  setDraftSettings,
-  settings,
-  accessToken,
-  currentUser,
-  onSubmit,
-}: {
-  draftSettings: AppSettings;
-  setDraftSettings: (settings: AppSettings) => void;
-  settings: AppSettings;
-  accessToken: string;
-  currentUser: UserDto;
-  onSubmit: (event: FormEvent) => void;
-}) {
-  return (
-    <section className="min-w-0 rounded-md border border-neutral-800 bg-neutral-900 p-4 lg:col-span-2">
-      <form className="grid max-w-xl gap-3" onSubmit={onSubmit}>
-        <SettingsFields draftSettings={draftSettings} setDraftSettings={setDraftSettings} />
-        <button className="mt-1 inline-flex w-fit items-center gap-2 rounded-md bg-neutral-100 px-3 py-2 text-sm font-medium text-neutral-950" type="submit">
-          <Save className="h-4 w-4" />
-          Save
-        </button>
-      </form>
-      <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
-    </section>
-  );
-}
-
-function TelegramLinkPanel({
-  settings,
-  accessToken,
-  currentUser,
-}: {
-  settings: AppSettings;
-  accessToken: string;
-  currentUser: UserDto;
-}) {
-  const queryClient = useQueryClient();
-  const [codeId, setCodeId] = useState<string | null>(null);
-
-  const createCode = useMutation({
-    mutationFn: () => createTelegramLinkCode(settings, accessToken),
-    onSuccess: (code) => setCodeId(code.Id),
-  });
-
-  const disconnect = useMutation({
-    mutationFn: () => disconnectTelegram(settings, accessToken),
-    onSuccess: () => {
-      setCodeId(null);
-      void queryClient.invalidateQueries({ queryKey: ["current-user"] });
-    },
-  });
-
-  const linkStatus = useQuery({
-    queryKey: ["telegram-link-status", settings, accessToken, codeId],
-    queryFn: () => getTelegramLinkStatus(settings, accessToken, codeId!),
-    enabled: Boolean(codeId),
-    refetchInterval: (query) => query.state.data?.IsConsumed ? false : 2500,
-  });
-
-  useEffect(() => {
-    if (!linkStatus.data?.IsConsumed)
-      return;
-
-    void queryClient.invalidateQueries({ queryKey: ["current-user"] });
-  }, [linkStatus.data?.IsConsumed, queryClient]);
-
-  return (
-    <section className="mt-6 max-w-xl border-t border-neutral-800 pt-4">
-      <div className="mb-3 flex items-center justify-between gap-3">
-        <div>
-          <h2 className="text-sm font-semibold text-neutral-300">Telegram</h2>
-          <p className="text-xs text-neutral-500">{currentUser.ChatId ? "Connected" : "Not connected"}</p>
-        </div>
-        <button className="rounded-md border border-neutral-700 px-3 py-2 text-sm" disabled={createCode.isPending} onClick={() => createCode.mutate()} type="button">
-          Create link code
-        </button>
-      </div>
-      {currentUser.ChatId && (
-        <button
-          className="mb-3 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm font-semibold text-red-100 disabled:cursor-not-allowed disabled:opacity-50"
-          disabled={disconnect.isPending}
-          onClick={() => {
-            if (window.confirm("Disconnect Telegram from this web account?"))
-              disconnect.mutate();
-          }}
-          type="button"
-        >
-          {disconnect.isPending ? "Disconnecting..." : "Disconnect Telegram"}
-        </button>
-      )}
-      {createCode.data && (
-        <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
-          <p className="text-xs text-neutral-500">Send this command to the bot</p>
-          <p className="mt-1 font-mono text-lg">/link {createCode.data.Code}</p>
-          <p className="mt-2 text-xs text-neutral-500">Expires: {formatDateTime(createCode.data.ExpiresAt)}</p>
-          {linkStatus.data?.IsConsumed && <p className="mt-2 text-sm text-emerald-300">Telegram account connected.</p>}
-          {linkStatus.data?.IsExpired && !linkStatus.data.IsConsumed && <p className="mt-2 text-sm text-red-300">This code expired. Create a new one.</p>}
-        </div>
-      )}
-      {(createCode.error || linkStatus.error || disconnect.error) && (
-        <p className="mt-3 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">
-          {createCode.error?.message ?? linkStatus.error?.message ?? disconnect.error?.message}
-        </p>
-      )}
-    </section>
-  );
-}
-
-function SettingsFields({
-  draftSettings,
-  setDraftSettings,
-}: {
-  draftSettings: AppSettings;
-  setDraftSettings: (settings: AppSettings) => void;
-}) {
-  return (
-    <>
-      <label className="label">
-        API URL
-        <input
-          className="field"
-          onChange={(event) => setDraftSettings({ ...draftSettings, apiBaseUrl: event.target.value })}
-          placeholder="Same origin"
-          value={draftSettings.apiBaseUrl}
+        <SpField
+          label={`TYPE "${group.Name}" TO CONFIRM`}
+          value={confirmation}
+          onChange={setConfirmation}
         />
-      </label>
-      <label className="label">
-        Development user id
-        <input className="field" onChange={(event) => setDraftSettings({ ...draftSettings, devUserId: event.target.value })} value={draftSettings.devUserId} />
-      </label>
-      <label className="label">
-        Development user name
-        <input className="field" onChange={(event) => setDraftSettings({ ...draftSettings, devUserName: event.target.value })} value={draftSettings.devUserName} />
-      </label>
-      <div className="label">
-        Overview block size
-        <div className="segmented-control">
-          {(["small", "medium", "large"] as const).map((size) => (
-            <button
-              className={`tab-button ${draftSettings.overviewBlockSize === size ? "active" : ""}`}
-              key={size}
-              onClick={() => setDraftSettings({ ...draftSettings, overviewBlockSize: size })}
-              type="button"
-            >
-              {size}
-            </button>
-          ))}
+        {error && <div className="sp-error-box">{error}</div>}
+        <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+          <button className="sp-btn-secondary" onClick={onClose} style={{ width: "auto", padding: "10px 16px" }} type="button">
+            CANCEL
+          </button>
+          <button className="sp-btn-danger sp-btn-danger--filled"
+            disabled={!canDelete || isDeleting} onClick={onConfirm} type="button"
+            style={{ padding: "10px 16px" }}>
+            {isDeleting ? "DELETING…" : "DELETE GROUP"}
+          </button>
         </div>
       </div>
-    </>
+    </SpModal>
   );
 }
 
-function MemberRow({
-  member,
-  onRemove,
-  onToggleAdmin,
+// ── Modal ──────────────────────────────────────────────────────────
+function SpModal({ title, children, onClose }: { title: string; children: ReactNode; onClose: () => void }) {
+  return (
+    <div className="sp-modal-backdrop" role="presentation" onMouseDown={onClose}>
+      <section className="sp-modal" aria-modal="true" role="dialog" aria-label={title}
+        onMouseDown={(e) => e.stopPropagation()}>
+        <div className="sp-modal-header">
+          <span className="sp-modal-title sp-mono sp-up" style={{ letterSpacing: "0.1em" }}>{title}</span>
+          <button className="sp-btn-icon" onClick={onClose} title="Close" type="button">
+            <X size={14} />
+          </button>
+        </div>
+        {children}
+      </section>
+    </div>
+  );
+}
+
+// ── Toasts ─────────────────────────────────────────────────────────
+function StatusChangedToast({ message }: { message: string }) {
+  return (
+    <div className="sp-toast sp-toast--success">
+      <CheckCircle2 size={18} style={{ color: "var(--sp-safe)", flexShrink: 0 }} />
+      <p className="sp-mono" style={{ fontSize: 12, color: "var(--sp-fg)" }}>{message}</p>
+    </div>
+  );
+}
+
+function StatusRequestToast({ request, onDismiss }: { request: GroupStatusRequestedDto; onDismiss: () => void }) {
+  return (
+    <div className="sp-toast sp-toast--warning">
+      <Bell size={18} style={{ color: "oklch(0.82 0.18 85)", flexShrink: 0 }} />
+      <div className="sp-toast-content">
+        <p className="sp-mono sp-up" style={{ fontSize: 11, fontWeight: 700, color: "var(--sp-shelter)", letterSpacing: "0.08em" }}>
+          STATUS CHECK REQUESTED
+        </p>
+        <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", marginTop: 2 }}>
+          {request.GroupName} · {request.RequestedByUserName}
+        </p>
+      </div>
+      <button className="sp-btn-icon" onClick={onDismiss} style={{ width: 28, height: 28 }} title="Dismiss" type="button">
+        <X size={13} />
+      </button>
+    </div>
+  );
+}
+
+// ── Shared form field ──────────────────────────────────────────────
+function SpField({
+  label,
+  value,
+  placeholder,
+  type = "text",
+  icon,
+  onChange,
+  sans,
 }: {
-  member: GroupMemberDto;
-  onRemove?: () => void;
-  onToggleAdmin?: () => void;
+  label: string;
+  value: string;
+  placeholder?: string;
+  type?: string;
+  icon?: ReactNode;
+  onChange: (v: string) => void;
+  sans?: boolean;
 }) {
   return (
-    <div className="flex items-center justify-between gap-3 px-3 py-2">
-      <div className="min-w-0">
-        <p className="truncate text-sm font-medium">{member.UserName || member.Id}</p>
-        <p className="text-xs text-neutral-500">Role: {member.Role || "Member"}</p>
-        <p className="text-xs text-neutral-500">Status changed: {formatDateTime(member.LastActiveAt)}</p>
-        <p className="text-xs text-neutral-500">Last seen online: {formatDateTime(member.LastSeenOnlineAt)}</p>
-      </div>
-      <div className="flex flex-wrap items-center justify-end gap-2">
-        <StatusBadge status={member.Status} />
-        {onToggleAdmin && (
-          <button className="icon-button compact" onClick={onToggleAdmin} title={member.Role === "Admin" ? "Make member" : "Make admin"} type="button">
-            <ShieldCheck className="h-4 w-4" />
-          </button>
-        )}
-        {onRemove && (
-          <button className="icon-button compact danger" onClick={onRemove} title="Remove from group" type="button">
-            <Trash2 className="h-4 w-4" />
-          </button>
-        )}
+    <div className="sp-field-wrap">
+      <span className="sp-field-label">{label}</span>
+      <div className={`sp-field-input-row ${sans ? "sp-field-sans" : ""}`}>
+        {icon}
+        <input
+          className="sp-field-input"
+          type={type}
+          placeholder={placeholder}
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+        />
       </div>
     </div>
   );
 }
 
+// ── Inline SVG icons for login ─────────────────────────────────────
+function MailIcon() {
+  return <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>;
+}
+function LockIcon() {
+  return <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>;
+}
+function UserIcon() {
+  return <svg width={15} height={15} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/></svg>;
+}
+function TelegramIcon() {
+  return <span style={{ width: 14, height: 14, background: "var(--sp-shelter)", color: "#000", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 10, fontWeight: 700 }}>T</span>;
+}
+function ChevronRight({ size }: { size: number }) {
+  return <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"><path d="m9 18 6-6-6-6"/></svg>;
+}
+
+// ── Utilities ──────────────────────────────────────────────────────
+function statusOrder(status: UserStatus) {
+  switch (status) {
+    case "NeedHelp":  return 0;
+    case "InShelter": return 1;
+    case "Safe":      return 2;
+    case "Unknown":   return 3;
+  }
+}
+
 function formatDateTime(value: string) {
   return new Date(value).toLocaleString();
-}
-
-function StatusBadge({ status }: { status: UserStatus }) {
-  return (
-    <span className={`status-badge ${status.toLowerCase()}`}>
-      <Activity className="h-3 w-3" />
-      {status}
-    </span>
-  );
-}
-
-function formatStatusLabel(status: UserStatus) {
-  return statuses.find((item) => item.value === status)?.label ?? status;
 }
 
 function normalizeStatusChanged(message: StatusChangedDto | Record<string, unknown>): StatusChangedDto {
@@ -1368,39 +1696,11 @@ function normalizeGroupStatusRequested(message: GroupStatusRequestedDto | Record
   };
 }
 
-function StatusChangedToast({ message }: { message: string }) {
-  return (
-    <section className="status-request-toast success">
-      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" />
-      <p className="text-sm font-semibold text-emerald-100">{message}</p>
-    </section>
-  );
-}
-
-function StatusRequestToast({ request, onDismiss }: { request: GroupStatusRequestedDto; onDismiss: () => void }) {
-  return (
-    <section className="status-request-toast">
-      <Bell className="h-5 w-5 shrink-0 text-yellow-300" />
-      <div className="min-w-0">
-        <p className="truncate text-sm font-semibold">{request.GroupName}</p>
-        <p className="text-xs text-neutral-300">{request.RequestedByUserName} requested status updates</p>
-      </div>
-      <button className="icon-button compact" onClick={onDismiss} title="Dismiss" type="button">
-        <X className="h-4 w-4" />
-      </button>
-    </section>
-  );
-}
-
 function playStatusRequestSignal() {
-  if ("vibrate" in navigator)
-    navigator.vibrate?.(180);
-
+  if ("vibrate" in navigator) navigator.vibrate?.(180);
   try {
     const AudioContextCtor = window.AudioContext || (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
-    if (!AudioContextCtor)
-      return;
-
+    if (!AudioContextCtor) return;
     const context = new AudioContextCtor();
     const oscillator = context.createOscillator();
     const gain = context.createGain();
@@ -1410,21 +1710,24 @@ function playStatusRequestSignal() {
     gain.connect(context.destination);
     oscillator.start();
     oscillator.stop(context.currentTime + 0.12);
-  } catch {
-  }
+  } catch {}
 }
 
 function readInitialGroupId() {
-  if (typeof window === "undefined")
-    return null;
-
+  if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("groupId");
 }
 
-function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {
-  return (
-    <button className={`tab-button ${active ? "active" : ""}`} onClick={onClick} type="button">
-      {label}
-    </button>
-  );
+function parseInviteToken(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return "";
+  const joinPrefix = "join_";
+  const joinIndex = trimmed.indexOf(joinPrefix);
+  if (joinIndex >= 0) return trimmed.slice(joinIndex + joinPrefix.length).split(/[/?#&\s]/)[0];
+  try {
+    const url = new URL(trimmed);
+    const parts = url.pathname.split("/").filter(Boolean);
+    if (parts.length > 0) return parts[parts.length - 1];
+  } catch {}
+  return trimmed.split(/[/?#&\s]/)[0];
 }
