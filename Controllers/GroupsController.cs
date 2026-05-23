@@ -1,14 +1,19 @@
+using System.Net;
 using HeartPulse.DTOs;
 using HeartPulse.Exceptions;
 using HeartPulse.Hubs;
+using HeartPulse.Localization;
 using HeartPulse.Models;
+using HeartPulse.Options;
 using HeartPulse.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
+using Microsoft.Extensions.Options;
 using MongoDB.Driver;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
+using Telegram.Bot.Types.Enums;
 
 namespace HeartPulse.Controllers;
 
@@ -22,8 +27,12 @@ public class GroupsController(
     IHubContext<StatusHub> statusHub,
     ITelegramBotClient bot,
     IServiceScopeFactory scopeFactory,
+    IOptions<AppOptions> appOptions,
+    IAppLocalizer localizer,
     ILogger<GroupsController> logger) : ControllerBase
 {
+    private readonly AppOptions _appOptions = appOptions.Value;
+
     [HttpPost]
     public async Task<ActionResult<GroupDto>> Create([FromBody] CreateGroupRequest request, CancellationToken ct)
     {
@@ -321,22 +330,26 @@ public class GroupsController(
         ApiUrl = $"{Request.Scheme}://{Request.Host}/api/invites/{invite.Token}"
     };
 
-    private async Task NotifyTelegramStatusRequestAsync(IReadOnlyList<long> chatIds, string groupName, string requesterName)
+    private async Task NotifyTelegramStatusRequestAsync(
+        IReadOnlyList<TelegramStatusRequestRecipient> recipients,
+        string groupId,
+        string groupName,
+        string requesterName)
     {
-        foreach (var chatId in chatIds)
+        foreach (var recipient in recipients)
         {
+            var text = BuildStatusRequestText(groupId, groupName, requesterName, recipient.Language);
             try
             {
-                var text = $"{requesterName} просить оновити статус у групі {groupName}.";
                 await bot.SendMessage(
-                    chatId,
+                    recipient.ChatId,
                     text,
-                    replyMarkup: TelegramController.StatusKeyboard);
+                    parseMode: ParseMode.Html,
+                    replyMarkup: TelegramController.BuildStatusKeyboard(recipient.Language));
             }
             catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
             {
-                var text = $"{requesterName} просить оновити статус у групі {groupName}.";
-                var tooLong = new TelegramMessageTooLongException(chatId, text, ex);
+                var tooLong = new TelegramMessageTooLongException(recipient.ChatId, text, ex);
                 logger.LogError(
                     tooLong,
                     "Telegram status request notification is too long. ChatId: {ChatId}, TextLength: {TextLength}, TextPreview: {TextPreview}",
@@ -346,7 +359,7 @@ public class GroupsController(
             }
             catch (Exception ex)
             {
-                logger.LogWarning(ex, "Failed to send group status request notification to Telegram chat {ChatId}", chatId);
+                logger.LogWarning(ex, "Failed to send group status request notification to Telegram chat {ChatId}", recipient.ChatId);
             }
         }
     }
@@ -391,18 +404,44 @@ public class GroupsController(
                     groupId);
             }
 
-            var chatIds = members
+            var recipients = members
                 .Where(member => member.User.TelegramNotificationsEnabled != false)
-                .Select(member => member.User.ChatId)
-                .Where(chatId => chatId.HasValue)
-                .Select(chatId => chatId!.Value)
-                .Distinct()
+                .Where(member => member.User.ChatId.HasValue)
+                .GroupBy(member => member.User.ChatId!.Value)
+                .Select(group => new TelegramStatusRequestRecipient(
+                    group.Key,
+                    localizer.NormalizeLanguage(group.First().User.Language)))
                 .ToList();
-            await NotifyTelegramStatusRequestAsync(chatIds, groupName, requesterName);
+            await NotifyTelegramStatusRequestAsync(recipients, groupId, groupName, requesterName);
         }
         catch (Exception ex)
         {
             logger.LogWarning(ex, "Failed to process status request side effects for group {GroupId}", groupId);
         }
     }
+
+    private string BuildStatusRequestText(string groupId, string groupName, string requesterName, string language)
+    {
+        var safeRequesterName = WebUtility.HtmlEncode(requesterName);
+        var safeGroupName = WebUtility.HtmlEncode(groupName);
+        var groupLink = WebUtility.HtmlEncode(BuildGroupLink(groupId));
+
+        return localizer.Text(
+            "telegram.statusRequest",
+            language,
+            safeRequesterName,
+            safeGroupName,
+            groupLink);
+    }
+
+    private string BuildGroupLink(string groupId)
+    {
+        var publicBaseUrl = _appOptions.PublicBaseUrl?.Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(publicBaseUrl))
+            publicBaseUrl = "http://localhost:5002";
+
+        return $"{publicBaseUrl}/?groupId={Uri.EscapeDataString(groupId)}";
+    }
+
+    private sealed record TelegramStatusRequestRecipient(long ChatId, string Language);
 }

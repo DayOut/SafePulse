@@ -1,14 +1,14 @@
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
+using HeartPulse.Localization;
 using HeartPulse.Models;
-using HeartPulse.Notifiers.Interfaces;
-using HeartPulse.Services.Interfaces;
+using HeartPulse.Services;
 
 namespace HeartPulse.Commands.Handlers;
 
 public class HelpCommandHandler(
-    IUserService userService,
-    IGroupNotifier groupNotifier)
+    TelegramStatusUpdateService statusUpdateService,
+    IAppLocalizer localizer)
     : ITelegramCommandHandler
 {
     public bool CanHandle(TelegramCommandContext context)
@@ -20,9 +20,8 @@ public class HelpCommandHandler(
         TelegramCommandContext context,
         CancellationToken ct)
     {
-        await userService.UpdateStatusAsync(context.User, UserStatus.NeedHelp, ct);
-        await groupNotifier.NotifyStatusChangedAsync(context.User, ct);
+        var user = await statusUpdateService.UpdateAsync(context.User, UserStatus.NeedHelp, ct);
 
-        return new TelegramCommandResult("🆘 Відмічено: потрібна допомога");
+        return new TelegramCommandResult(localizer.Text("telegram.helpSet", user?.Language ?? context.User.Language));
     }
 }

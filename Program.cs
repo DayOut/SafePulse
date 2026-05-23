@@ -119,6 +119,7 @@ services.AddScoped<IUserService, UserService>();
 services.AddScoped<IGroupService, GroupService>();
 services.AddScoped<IAuthService, AuthService>();
 services.AddScoped<ITelegramLinkService, TelegramLinkService>();
+services.AddScoped<TelegramStatusUpdateService>();
 services.AddSingleton<IAppLocalizer, JsonAppLocalizer>();
 services.AddScoped<IGroupNotificationBuilder, GroupNotificationBuilder>();
 services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();

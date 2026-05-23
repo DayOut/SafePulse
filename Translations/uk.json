@@ -31,5 +31,6 @@
   "telegram.largeStatusTitle": "Оновлення статусів у великій групі",
   "telegram.largeStatusSummary": "У групі {0} учасників. Повний список дивись у web UI.",
   "telegram.noNeedHelp": "Зараз немає учасників зі статусом \"Потребую допомоги\".",
-  "telegram.needHelpCount": "Потребують допомоги: {0}"
+  "telegram.needHelpCount": "Потребують допомоги: {0}",
+  "telegram.statusRequest": "{0} просить оновити статус у групі <a href=\"{2}\">{1}</a>."
 }
