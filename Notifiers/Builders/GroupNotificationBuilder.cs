@@ -7,12 +7,20 @@ using HeartPulse.Formatters;
 using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Models;
 using HeartPulse.Notifiers.Interfaces;
+using HeartPulse.Options;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Options;
 
 namespace HeartPulse.Notifiers.Builders;
 
-public class GroupNotificationBuilder(SafePulseContext db, ITelegramTextFormatter formatter) : IGroupNotificationBuilder
+public class GroupNotificationBuilder(
+    SafePulseContext db,
+    ITelegramTextFormatter formatter,
+    IOptions<AppOptions> appOptions) : IGroupNotificationBuilder
 {
+    private const int CompactGroupMemberThreshold = 20;
+    private readonly AppOptions _appOptions = appOptions.Value;
+
     public async Task<IReadOnlyList<GroupStatusNotification>> BuildStatusNotificationsAsync(
         AppUser changedUser,
         CancellationToken ct)
@@ -50,27 +58,9 @@ public class GroupNotificationBuilder(SafePulseContext db, ITelegramTextFormatte
             if (members.Count == 0)
                 continue;
 
-            var safeGroupName = WebUtility.HtmlEncode(group.Name);
-            var inviteLink = $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
-            var safeInviteLink = WebUtility.HtmlEncode(inviteLink);
-
-            var sb = new StringBuilder();
-            sb.AppendLine($"<b>Оновлення статусів у групі</b> " +
-                          $"<a href=\"{safeInviteLink}\">{safeGroupName}</a>");
-            sb.AppendLine();
-
-            foreach (var member in members)
-            {
-                var userName = WebUtility.HtmlEncode(member.UserName ?? member.Id);
-                var time = member.LastActiveAt.ToHumanTime();
-
-                if (changedUser.Id == member.Id)
-                    sb.AppendLine($"- <b><u>{userName}: {formatter.FormatStatus(member.Status)} ({time})</u></b>");
-                else
-                    sb.AppendLine($"- {userName}: {formatter.FormatStatus(member.Status)} ({time})");
-            }
-
-            var text = sb.ToString();
+            var text = members.Count > CompactGroupMemberThreshold
+                ? BuildCompactStatusText(group, members)
+                : BuildFullStatusText(group, members, changedUser.Id);
 
             foreach (var member in members)
             {
@@ -82,5 +72,68 @@ public class GroupNotificationBuilder(SafePulseContext db, ITelegramTextFormatte
         }
 
         return result;
+    }
+
+    private string BuildFullStatusText(Group group, IReadOnlyList<AppUser> members, string changedUserId)
+    {
+        var safeGroupName = WebUtility.HtmlEncode(group.Name);
+        var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"<b>Оновлення статусів у групі</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
+        sb.AppendLine();
+
+        foreach (var member in members)
+        {
+            var userName = WebUtility.HtmlEncode(member.UserName ?? member.Id);
+            var time = member.LastActiveAt.ToHumanTime();
+
+            if (changedUserId == member.Id)
+                sb.AppendLine($"- <b><u>{userName}: {formatter.FormatStatus(member.Status)} ({time})</u></b>");
+            else
+                sb.AppendLine($"- {userName}: {formatter.FormatStatus(member.Status)} ({time})");
+        }
+
+        return sb.ToString();
+    }
+
+    private string BuildCompactStatusText(Group group, IReadOnlyList<AppUser> members)
+    {
+        var safeGroupName = WebUtility.HtmlEncode(group.Name);
+        var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
+        var needHelpMembers = members
+            .Where(member => member.Status == UserStatus.NeedHelp)
+            .OrderByDescending(member => member.LastActiveAt)
+            .ToList();
+
+        var sb = new StringBuilder();
+        sb.AppendLine($"<b>Оновлення статусів у великій групі</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
+        sb.AppendLine($"У групі {members.Count} учасників. Повний список дивись у web UI.");
+        sb.AppendLine();
+
+        if (needHelpMembers.Count == 0)
+        {
+            sb.AppendLine("Зараз немає учасників зі статусом \"Потребую допомоги\".");
+            return sb.ToString();
+        }
+
+        sb.AppendLine($"<b>Потребують допомоги: {needHelpMembers.Count}</b>");
+        foreach (var member in needHelpMembers)
+        {
+            var userName = WebUtility.HtmlEncode(member.UserName ?? member.Id);
+            var time = member.LastActiveAt.ToHumanTime();
+            sb.AppendLine($"- {userName} ({time})");
+        }
+
+        return sb.ToString();
+    }
+
+    private string BuildGroupLink(Group group)
+    {
+        var publicBaseUrl = _appOptions.PublicBaseUrl?.Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(publicBaseUrl))
+            return $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
+
+        return $"{publicBaseUrl}/?groupId={Uri.EscapeDataString(group.Id)}";
     }
 }

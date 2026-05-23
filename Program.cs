@@ -25,6 +25,7 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection("Telegram"));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.Configure<FakeStatusSimulatorOptions>(builder.Configuration.GetSection("FakeStatusSimulator"));
+builder.Services.Configure<AppOptions>(builder.Configuration.GetSection("App"));
 
 var mongoConn = builder.Configuration.GetValue<string>("Mongo:ConnectionString")!;
 var mongoDb = builder.Configuration.GetValue<string>("Mongo:Database") ?? "safepulse";

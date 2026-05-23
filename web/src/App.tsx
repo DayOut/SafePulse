@@ -66,11 +66,12 @@ const statuses: Array<{
 
 export default function App() {
   const queryClient = useQueryClient();
+  const initialGroupId = useMemo(() => readInitialGroupId(), []);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [draftSettings, setDraftSettings] = useState<AppSettings>(() => loadSettings());
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>(initialGroupId ? "groups" : "overview");
   const [connectionState, setConnectionState] = useState("Disconnected");
   const [statusRequest, setStatusRequest] = useState<GroupStatusRequestedDto | null>(null);
   const statusConnectionRef = useRef<HubConnection | null>(null);
@@ -318,6 +319,7 @@ export default function App() {
             settings={settings}
             accessToken={session.AccessToken}
             currentUserId={session.User.Id}
+            initialSelectedGroupId={initialGroupId}
             onJoined={async () => {
               if (statusConnectionRef.current?.state === "Connected")
                 await statusConnectionRef.current.invoke("JoinUserGroups");
@@ -669,16 +671,18 @@ function GroupsPage({
   settings,
   accessToken,
   currentUserId,
+  initialSelectedGroupId,
   onJoined,
 }: {
   settings: AppSettings;
   accessToken: string;
   currentUserId: string;
+  initialSelectedGroupId: string | null;
   onJoined: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
   const [groupName, setGroupName] = useState("");
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null);
+  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
   const [inviteNote, setInviteNote] = useState("");
   const [latestInvite, setLatestInvite] = useState<string | null>(null);
   const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
@@ -690,6 +694,11 @@ function GroupsPage({
     queryKey: ["my-groups", settings, accessToken],
     queryFn: () => getMyGroups(settings, accessToken),
   });
+
+  useEffect(() => {
+    if (initialSelectedGroupId)
+      setSelectedGroupId(initialSelectedGroupId);
+  }, [initialSelectedGroupId]);
 
   const selectedGroup = useMemo(
     () => groups.data?.find((group) => group.Id === selectedGroupId) ?? groups.data?.[0],
@@ -1292,6 +1301,13 @@ function playStatusRequestSignal() {
     oscillator.stop(context.currentTime + 0.12);
   } catch {
   }
+}
+
+function readInitialGroupId() {
+  if (typeof window === "undefined")
+    return null;
+
+  return new URLSearchParams(window.location.search).get("groupId");
 }
 
 function TabButton({ active, onClick, label }: { active: boolean; onClick: () => void; label: string }) {

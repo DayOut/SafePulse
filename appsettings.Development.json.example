@@ -22,6 +22,9 @@
   "Api": {
     "AdminKey": "dev-admin-key"
   },
+  "App": {
+    "PublicBaseUrl": "http://localhost:5002"
+  },
   "Auth": {
     "Issuer": "SafePulse",
     "Audience": "SafePulse.Web",
