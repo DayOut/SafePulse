@@ -176,10 +176,17 @@ export default function App() {
       settings,
       session.AccessToken,
       (message) => {
+        let shouldRefetchGroups = false;
         queryClient.setQueryData<MyGroupDto[]>(["my-groups", settings, session.AccessToken], (groups) =>
-          groups?.map((group) =>
-            message.GroupIds.includes(group.Id)
-              ? {
+          groups?.map((group) => {
+            if (!message.GroupIds.includes(group.Id))
+              return group;
+
+            var hasMember = group.Members.some((member) => member.Id === message.UserId);
+            if (!hasMember)
+              shouldRefetchGroups = true;
+
+            return {
                   ...group,
                   Members: group.Members.map((member) =>
                     member.Id === message.UserId
@@ -192,10 +199,11 @@ export default function App() {
                         }
                       : member,
                   ),
-                }
-              : group,
-          ),
+                };
+          }),
         );
+        if (shouldRefetchGroups)
+          void queryClient.invalidateQueries({ queryKey: ["my-groups"] });
       },
       (message) => {
         setStatusRequest(message);

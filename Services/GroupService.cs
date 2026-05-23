@@ -34,9 +34,18 @@ public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : I
             Builders<GroupUser>.Filter.Eq(gu => gu.UserId, userId),
             Builders<GroupUser>.Filter.Ne(gu => gu.IsDeleted, true));
 
-        return await _groupUsers.Find(filter)
+        var memberGroupIds = await _groupUsers.Find(filter)
             .Project(gu => gu.GroupId)
             .ToListAsync(ct);
+
+        var ownedGroupIds = await _groups.Find(g => g.OwnerId == userId && g.IsDeleted != true)
+            .Project(g => g.Id)
+            .ToListAsync(ct);
+
+        return memberGroupIds
+            .Concat(ownedGroupIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
     }
 
     public async Task<IReadOnlyList<Group>> GetOwnedGroupsAsync(string ownerId, CancellationToken ct)
