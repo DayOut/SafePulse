@@ -93,8 +93,14 @@ public class UsersController(
             GroupIds = groupIds
         };
 
-        if (groupIds.Count > 0)
-            _ = BroadcastStatusChangedAsync(statusHub, logger, groupIds, message);
+        if (groupIds.Count == 0)
+        {
+            logger.LogInformation("Status changed for user {UserId}, but no groups were found for realtime broadcast", userId);
+        }
+        else
+        {
+            await BroadcastStatusChangedAsync(statusHub, logger, groupIds, message, ct);
+        }
 
         return Ok(ToDto(user));
     }
@@ -138,12 +144,19 @@ public class UsersController(
         IHubContext<StatusHub> statusHub,
         ILogger logger,
         IReadOnlyList<string> groupIds,
-        StatusChangedDto message)
+        StatusChangedDto message,
+        CancellationToken ct)
     {
         try
         {
+            logger.LogInformation(
+                "Broadcasting statusChanged for user {UserId} with status {Status} to groups {GroupIds}",
+                message.UserId,
+                message.Status,
+                string.Join(", ", groupIds));
+
             await statusHub.Clients.Groups(groupIds)
-                .SendAsync("statusChanged", message, CancellationToken.None);
+                .SendAsync("statusChanged", message, ct);
         }
         catch (Exception ex)
         {

@@ -25,6 +25,7 @@ import {
   GroupStatusRequestedDto,
   GroupMemberDto,
   MyGroupDto,
+  StatusChangedDto,
   UserDto,
   UserStatus,
   acceptInvite,
@@ -185,7 +186,8 @@ export default function App() {
     const connection = createStatusConnection(
       settings,
       session.AccessToken,
-      (message) => {
+      (rawMessage) => {
+        const message = normalizeStatusChanged(rawMessage);
         let shouldRefetchGroups = false;
         queryClient.setQueryData<MyGroupDto[]>(["my-groups", settings, session.AccessToken], (groups) =>
           groups?.map((group) => {
@@ -215,7 +217,8 @@ export default function App() {
         if (shouldRefetchGroups)
           void queryClient.invalidateQueries({ queryKey: ["my-groups"] });
       },
-      (message) => {
+      (rawMessage) => {
+        const message = normalizeGroupStatusRequested(rawMessage);
         setStatusRequest(message);
         playStatusRequestSignal();
       },
@@ -1292,6 +1295,30 @@ function StatusBadge({ status }: { status: UserStatus }) {
 
 function formatStatusLabel(status: UserStatus) {
   return statuses.find((item) => item.value === status)?.label ?? status;
+}
+
+function normalizeStatusChanged(message: StatusChangedDto | Record<string, unknown>): StatusChangedDto {
+  const raw = message as Record<string, unknown>;
+  return {
+    UserId: (raw.UserId ?? raw.userId) as string,
+    UserName: (raw.UserName ?? raw.userName) as string,
+    Status: (raw.Status ?? raw.status) as UserStatus,
+    LastActiveAt: (raw.LastActiveAt ?? raw.lastActiveAt) as string,
+    LastSeenOnlineAt: (raw.LastSeenOnlineAt ?? raw.lastSeenOnlineAt) as string,
+    GroupIds: (raw.GroupIds ?? raw.groupIds ?? []) as string[],
+  };
+}
+
+function normalizeGroupStatusRequested(message: GroupStatusRequestedDto | Record<string, unknown>): GroupStatusRequestedDto {
+  const raw = message as Record<string, unknown>;
+  return {
+    Id: (raw.Id ?? raw.id) as string,
+    GroupId: (raw.GroupId ?? raw.groupId) as string,
+    GroupName: (raw.GroupName ?? raw.groupName) as string,
+    RequestedByUserId: (raw.RequestedByUserId ?? raw.requestedByUserId) as string,
+    RequestedByUserName: (raw.RequestedByUserName ?? raw.requestedByUserName) as string,
+    CreatedAt: (raw.CreatedAt ?? raw.createdAt) as string,
+  };
 }
 
 function StatusChangedToast({ message }: { message: string }) {
