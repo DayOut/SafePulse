@@ -119,6 +119,7 @@ services.AddScoped<ITelegramCommandHandler, StartCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, CreateGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, JoinGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, LinkTelegramCommandHandler>();
+services.AddScoped<ITelegramCommandHandler, TelegramNotificationsCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, UnknownCommandHandler>();
 
 builder.Logging.ClearProviders();

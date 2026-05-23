@@ -19,6 +19,7 @@ public class AppUser
 
     public UserStatus Status { get; set; } = UserStatus.Unknown;
     public long? ChatId { get; set; }
+    public bool? TelegramNotificationsEnabled { get; set; }
     public List<string>? Roles { get; set; }
     public bool? IsFake { get; set; }
     public bool? IsDeleted { get; set; }

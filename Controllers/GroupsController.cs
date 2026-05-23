@@ -234,6 +234,7 @@ public class GroupsController(
 
         var members = await groupService.GetGroupMembersAsync(group.Id, ct);
         var chatIds = members
+            .Where(member => member.User.TelegramNotificationsEnabled != false)
             .Select(member => member.User.ChatId)
             .Where(chatId => chatId.HasValue)
             .Select(chatId => chatId!.Value)
