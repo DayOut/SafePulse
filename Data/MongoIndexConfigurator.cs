@@ -16,6 +16,7 @@ public static class MongoIndexConfigurator
         await ConfigureRefreshSessionIndexesAsync(db);
         await ConfigureTelegramLinkCodeIndexesAsync(db);
         await ConfigureGroupStatusRequestIndexesAsync(db);
+        await ConfigureTelegramStatusMessageIndexesAsync(db);
     }
 
     private static async Task ConfigureUserIndexesAsync(IMongoDatabase db)
@@ -226,6 +227,26 @@ public static class MongoIndexConfigurator
                 new CreateIndexOptions
                 {
                     Name = "idx_groupStatusRequests_groupId_createdAt"
+                })
+        };
+
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureTelegramStatusMessageIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<TelegramStatusMessage>("telegramStatusMessages");
+        var indexes = new List<CreateIndexModel<TelegramStatusMessage>>
+        {
+            new(
+                Builders<TelegramStatusMessage>.IndexKeys
+                    .Ascending(x => x.ChatId)
+                    .Ascending(x => x.GroupId)
+                    .Ascending(x => x.ChunkIndex),
+                new CreateIndexOptions
+                {
+                    Unique = true,
+                    Name = "idx_telegramStatusMessages_chat_group_chunk_unique"
                 })
         };
 

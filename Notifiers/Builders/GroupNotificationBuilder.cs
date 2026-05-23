@@ -76,7 +76,7 @@ public class GroupNotificationBuilder(SafePulseContext db, ITelegramTextFormatte
             {
                 if (member.ChatId.HasValue && member.TelegramNotificationsEnabled != false)
                 {
-                    result.Add(new GroupStatusNotification(member.ChatId.Value, text));
+                    result.Add(new GroupStatusNotification(member.ChatId.Value, group.Id, text));
                 }
             }
         }

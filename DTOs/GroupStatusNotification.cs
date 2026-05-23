@@ -1,3 +1,3 @@
 namespace HeartPulse.DTOs;
 
-public record GroupStatusNotification(long ChatId, string Text);
+public record GroupStatusNotification(long ChatId, string GroupId, string Text);
