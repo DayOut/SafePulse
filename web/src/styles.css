@@ -443,6 +443,10 @@ input {
   z-index: 40;
 }
 
+.status-request-toast.success {
+  border-color: rgb(6 95 70);
+}
+
 @media (min-width: 640px) {
   .status-footer {
     padding-left: max(1rem, calc((100vw - 80rem) / 2 + 1rem));

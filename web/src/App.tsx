@@ -74,6 +74,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<Tab>(initialGroupId ? "groups" : "overview");
   const [connectionState, setConnectionState] = useState("Disconnected");
   const [statusRequest, setStatusRequest] = useState<GroupStatusRequestedDto | null>(null);
+  const [statusChangedMessage, setStatusChangedMessage] = useState<string | null>(null);
   const statusConnectionRef = useRef<HubConnection | null>(null);
 
   useEffect(() => {
@@ -113,6 +114,7 @@ export default function App() {
     mutationFn: (status: UserStatus) => updateStatus(settings, session!.AccessToken, session!.User.Id, status),
     onSuccess: (user) => {
       setSession((existing) => existing ? { ...existing, User: user } : existing);
+      setStatusChangedMessage(`Status changed to ${formatStatusLabel(user.Status)}.`);
       queryClient.setQueryData(["current-user", settings, session?.AccessToken], user);
       queryClient.setQueryData<MyGroupDto[]>(["my-groups", settings, session?.AccessToken], (groups) =>
         groups?.map((group) => ({
@@ -132,6 +134,14 @@ export default function App() {
       );
     },
   });
+
+  useEffect(() => {
+    if (!statusChangedMessage)
+      return;
+
+    const timer = window.setTimeout(() => setStatusChangedMessage(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [statusChangedMessage]);
 
   const passwordLoginMutation = useMutation({
     mutationFn: (payload: { email: string; password: string }) => loginWithPassword(settings, payload.email, payload.password),
@@ -350,11 +360,17 @@ export default function App() {
       <StatusFooter
         activeStatus={currentUser.data?.Status ?? session.User.Status}
         isUpdating={statusMutation.isPending}
-        onUpdateStatus={(status) => statusMutation.mutate(status)}
+        onUpdateStatus={(status) => {
+          if (status === "NeedHelp" && !window.confirm("Confirm that you need help?"))
+            return;
+
+          statusMutation.mutate(status);
+        }}
         error={statusMutation.error?.message ?? currentUser.error?.message}
         connectionState={connectionState}
       />
       {statusRequest && <StatusRequestToast request={statusRequest} onDismiss={() => setStatusRequest(null)} />}
+      {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
     </main>
   );
 }
@@ -1271,6 +1287,19 @@ function StatusBadge({ status }: { status: UserStatus }) {
       <Activity className="h-3 w-3" />
       {status}
     </span>
+  );
+}
+
+function formatStatusLabel(status: UserStatus) {
+  return statuses.find((item) => item.value === status)?.label ?? status;
+}
+
+function StatusChangedToast({ message }: { message: string }) {
+  return (
+    <section className="status-request-toast success">
+      <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-300" />
+      <p className="text-sm font-semibold text-emerald-100">{message}</p>
+    </section>
   );
 }
 
