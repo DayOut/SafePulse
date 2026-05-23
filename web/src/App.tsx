@@ -15,8 +15,9 @@ import {
   Trash2,
   X,
 } from "lucide-react";
-import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
+import { createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
 import type { ReactNode } from "react";
+import { t as i18nT, type Lang, type TranslationKey } from "./i18n";
 import type { HubConnection } from "@microsoft/signalr";
 import {
   AppSettings,
@@ -74,19 +75,25 @@ function userInitials(userName: string): string {
   return userName.substring(0, 2).toUpperCase();
 }
 
-const STATUS_LABELS: Record<UserStatus, string> = {
-  Safe: "Safe",
-  InShelter: "In shelter",
-  NeedHelp: "Need help",
-  Unknown: "Unknown",
-};
+// ── i18n ──────────────────────────────────────────────────────────
+const LanguageContext = createContext<Lang>("en");
+function useT() {
+  const lang = useContext(LanguageContext);
+  return (key: TranslationKey) => i18nT(key, lang);
+}
 
-const STATUS_SHORT: Record<UserStatus, string> = {
-  Safe: "SAFE",
-  InShelter: "SHLT",
-  NeedHelp: "HELP",
-  Unknown: "UNK",
-};
+function statusLabel(status: UserStatus, lang: Lang): string {
+  if (status === "Safe")      return i18nT("status.safe", lang);
+  if (status === "InShelter") return i18nT("status.inShelter", lang);
+  if (status === "NeedHelp")  return i18nT("status.needHelp", lang);
+  return i18nT("status.unknown", lang);
+}
+function statusShort(status: UserStatus, lang: Lang): string {
+  if (status === "Safe")      return i18nT("status.safe.short", lang);
+  if (status === "InShelter") return i18nT("status.inShelter.short", lang);
+  if (status === "NeedHelp")  return i18nT("status.needHelp.short", lang);
+  return i18nT("status.unknown.short", lang);
+}
 
 // ── App ────────────────────────────────────────────────────────────
 export default function App() {
@@ -129,7 +136,7 @@ export default function App() {
       updateStatus(settings, session!.AccessToken, session!.User.Id, status),
     onSuccess: (user) => {
       setSession((existing) => existing ? { ...existing, User: user } : existing);
-      setStatusChangedMessage(`Status changed to ${STATUS_LABELS[user.Status]}.`);
+      setStatusChangedMessage(`Status changed to ${statusLabel(user.Status, lang)}.`);
       queryClient.setQueryData(["current-user", settings, session?.AccessToken], user);
       queryClient.setQueryData<MyGroupDto[]>(
         ["my-groups", settings, session?.AccessToken],
@@ -296,10 +303,16 @@ export default function App() {
   }
 
   const activeStatus = currentUser.data?.Status ?? session.User.Status;
+  const lang: Lang = (currentUser.data?.Language ?? session.User.Language ?? "en") as Lang;
   const connClass = connectionState === "Connected" ? "connected"
     : connectionState === "Disconnected" ? "disconnected" : "connecting";
+  const connLabel = connectionState === "Connected"    ? i18nT("conn.connected", lang)
+    : connectionState === "Reconnecting" ? i18nT("conn.reconnecting", lang)
+    : connectionState === "Disconnected" ? i18nT("conn.disconnected", lang)
+    : i18nT("conn.connecting", lang);
 
   return (
+    <LanguageContext.Provider value={lang}>
     <main>
       {/* ── Top bar ── */}
       <header className="sp-topbar">
@@ -315,15 +328,15 @@ export default function App() {
         <div className="sp-topbar-actions">
           <span className={`sp-conn-pill sp-conn-pill--${connClass}`}>
             <span className="sp-conn-dot sp-pulse" />
-            {connectionState.toUpperCase()}
+            {connLabel}
           </span>
           <nav className="sp-tab-nav">
             <button className={`sp-tab-btn ${activeTab === "overview" ? "active" : ""}`}
-              onClick={() => setActiveTab("overview")} type="button">OPS</button>
+              onClick={() => setActiveTab("overview")} type="button">{i18nT("nav.ops", lang)}</button>
             <button className={`sp-tab-btn ${activeTab === "groups" ? "active" : ""}`}
-              onClick={() => setActiveTab("groups")} type="button">GRP</button>
+              onClick={() => setActiveTab("groups")} type="button">{i18nT("nav.groups", lang)}</button>
             <button className={`sp-tab-btn ${activeTab === "settings" ? "active" : ""}`}
-              onClick={() => setActiveTab("settings")} type="button">SET</button>
+              onClick={() => setActiveTab("settings")} type="button">{i18nT("nav.settings", lang)}</button>
           </nav>
           <button className="sp-icon-btn" onClick={() => logoutMutation.mutate()} title="Logout" type="button">
             <LogOut size={15} />
@@ -375,7 +388,7 @@ export default function App() {
         activeStatus={activeStatus}
         isUpdating={statusMutation.isPending}
         onUpdateStatus={(status) => {
-          if (status === "NeedHelp" && !window.confirm("Confirm that you need help?")) return;
+          if (status === "NeedHelp" && !window.confirm(i18nT("grp.confirmNeedHelp", lang))) return;
           statusMutation.mutate(status);
         }}
         error={statusMutation.error?.message ?? currentUser.error?.message}
@@ -387,6 +400,7 @@ export default function App() {
       )}
       {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
     </main>
+    </LanguageContext.Provider>
   );
 }
 
@@ -568,6 +582,7 @@ function ClusterBtn({
 }) {
   const key = statusKey(status);
   const Icon = status === "Safe" ? ShieldCheck : status === "InShelter" ? DoorOpen : ShieldAlert;
+  const lang = useContext(LanguageContext);
 
   return (
     <div className="sp-cluster-btn-wrap">
@@ -576,13 +591,13 @@ function ClusterBtn({
         disabled={disabled}
         onClick={onClick}
         type="button"
-        title={STATUS_LABELS[status]}
+        title={statusLabel(status, lang)}
       >
         <Icon size={sos ? 28 : 22} strokeWidth={1.6} />
         {sos && <span className="sp-cluster-sos-badge">SOS</span>}
       </button>
       <span className={`sp-cluster-label sp-cluster-label--${key}`}>
-        {STATUS_SHORT[status]}
+        {statusShort(status, lang)}
       </span>
     </div>
   );
@@ -604,6 +619,8 @@ function OverviewPage({
   recentStatusChanges: StatusChangedDto[];
   onRequestAllStatus: () => void;
 }) {
+  const t = useT();
+  const lang = useContext(LanguageContext);
   const totals = { Unknown: 0, Safe: 0, NeedHelp: 0, InShelter: 0 } as Record<UserStatus, number>;
   const seen = new Set<string>();
   for (const group of groups) {
@@ -624,9 +641,9 @@ function OverviewPage({
         <StatusIcon size={18} strokeWidth={1.6} />
       </span>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div className="sp-last-report-label">{STATUS_LABELS[activeStatus]}</div>
+        <div className="sp-last-report-label">{statusLabel(activeStatus, lang)}</div>
         <div className="sp-last-report-sub">
-          Broadcasting to {groups.length} group{groups.length !== 1 ? "s" : ""}
+          {t("ops.broadcastTo")} {groups.length} {groups.length !== 1 ? t("ops.broadcastGroups") : t("ops.broadcastGroup")}
         </div>
       </div>
     </div>
@@ -641,9 +658,9 @@ function OverviewPage({
           <div className="sp-section">
             <div className="sp-section-head">
               <span className="sp-section-head-label">
-                <span className="sp-section-head-code">01</span>YOUR LAST REPORT
+                <span className="sp-section-head-code">01</span>{t("ops.lastReport")}
               </span>
-              <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>USE CLUSTER ↓</span>
+              <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>{t("ops.useCluster")}</span>
             </div>
             {lastReportBlock}
           </div>
@@ -653,11 +670,11 @@ function OverviewPage({
         <div className="sp-section" style={{ marginTop: 6 }}>
           <div className="sp-section-head">
             <span className="sp-section-head-label">
-              <span className="sp-section-head-code">02</span>NETWORK STATUS
+              <span className="sp-section-head-code">02</span>{t("ops.networkStatus")}
             </span>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", fontVariantNumeric: "tabular-nums" }}>
-                {total} people · {groups.length} groups
+                {total} {t("ops.people")} · {groups.length} {t("ops.groups")}
               </span>
               <button onClick={onRefresh} type="button"
                 style={{ background: "none", border: "none", cursor: "pointer", color: "var(--sp-fg-3)", display: "flex" }}>
@@ -666,14 +683,14 @@ function OverviewPage({
             </div>
           </div>
           {isLoading && (
-            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", marginTop: 10 }}>LOADING…</p>
+            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", marginTop: 10 }}>{t("ops.loading")}</p>
           )}
           {!isLoading && (
             <div className="sp-stat-grid">
-              <StatTile status="NeedHelp"  value={totals.NeedHelp}  total={total} label="HELP" />
-              <StatTile status="Unknown"   value={totals.Unknown}   total={total} label="UNK" />
-              <StatTile status="InShelter" value={totals.InShelter} total={total} label="SHLT" />
-              <StatTile status="Safe"      value={totals.Safe}      total={total} label="SAFE" />
+              <StatTile status="NeedHelp"  value={totals.NeedHelp}  total={total} label={t("grp.help")} />
+              <StatTile status="Unknown"   value={totals.Unknown}   total={total} label={t("grp.unknown")} />
+              <StatTile status="InShelter" value={totals.InShelter} total={total} label={t("grp.shelter")} />
+              <StatTile status="Safe"      value={totals.Safe}      total={total} label={t("grp.safe")} />
             </div>
           )}
         </div>
@@ -684,7 +701,7 @@ function OverviewPage({
             <div className="sp-section">
               <div className="sp-section-head">
                 <span className="sp-section-head-label">
-                  <span className="sp-section-head-code">03</span>MY GROUPS · {groups.length} ACTIVE
+                  <span className="sp-section-head-code">03</span>{t("ops.myGroups")} · {groups.length} {t("ops.active")}
                 </span>
               </div>
             </div>
@@ -696,7 +713,7 @@ function OverviewPage({
         {!isLoading && groups.length === 0 && (
           <div className="sp-section" style={{ marginTop: 6 }}>
             <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>
-              No groups yet — go to GRP tab to create or join one.
+              {t("ops.noGroups")}
             </p>
           </div>
         )}
@@ -707,8 +724,8 @@ function OverviewPage({
         {/* YOUR LAST REPORT */}
         <div>
           <div className="sp-section-head" style={{ marginBottom: 10 }}>
-            <span className="sp-section-head-label">YOUR LAST REPORT</span>
-            <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>USE CLUSTER ↓</span>
+            <span className="sp-section-head-label">{t("ops.lastReport")}</span>
+            <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>{t("ops.useCluster")}</span>
           </div>
           {lastReportBlock}
         </div>
@@ -716,12 +733,12 @@ function OverviewPage({
         {/* Network summary KV */}
         <div className="sp-group-kv-block">
           <div className="sp-group-kv">
-            <span className="sp-group-kv-k">VISIBLE TO</span>
-            <span className="sp-group-kv-v">{groups.length} GROUPS</span>
+            <span className="sp-group-kv-k">{t("ops.visibleTo")}</span>
+            <span className="sp-group-kv-v">{groups.length} {t("ops.groups.unit")}</span>
           </div>
           <div className="sp-group-kv">
-            <span className="sp-group-kv-k">NETWORK</span>
-            <span className="sp-group-kv-v">{total} PEOPLE</span>
+            <span className="sp-group-kv-k">{t("ops.network")}</span>
+            <span className="sp-group-kv-v">{total} {t("ops.people.unit")}</span>
           </div>
         </div>
 
@@ -733,19 +750,19 @@ function OverviewPage({
           disabled={groups.length === 0}
           type="button"
         >
-          <Bell size={13} /> REQUEST STATUS · ALL GROUPS
+          <Bell size={13} /> {t("ops.requestAll")}
         </button>
 
         {/* Live feed */}
         <div>
           <div className="sp-section-head" style={{ marginBottom: 12 }}>
-            <span className="sp-section-head-label">LIVE FEED</span>
+            <span className="sp-section-head-label">{t("ops.liveFeed")}</span>
             {recentStatusChanges.length > 0 && (
-              <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-4)", letterSpacing: "0.08em" }}>STREAM</span>
+              <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-4)", letterSpacing: "0.08em" }}>{t("ops.stream")}</span>
             )}
           </div>
           {recentStatusChanges.length === 0 ? (
-            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-4)" }}>Waiting for status updates…</p>
+            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-4)" }}>{t("ops.waiting")}</p>
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
               {recentStatusChanges.map((e, i) => {
@@ -759,7 +776,7 @@ function OverviewPage({
                     <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                       <span style={{ fontSize: 11, color: "var(--sp-fg)" }}>
                         {e.UserName || e.UserId} →{" "}
-                        <span style={{ color: `var(--sp-${ek})`, fontWeight: 600 }}>{STATUS_SHORT[e.Status]}</span>
+                        <span style={{ color: `var(--sp-${ek})`, fontWeight: 600 }}>{statusShort(e.Status, lang)}</span>
                       </span>
                     </div>
                   </div>
@@ -797,6 +814,7 @@ function StatTile({ status, value, total, label }: { status: UserStatus; value: 
 }
 
 function OverviewGroupRow({ group }: { group: MyGroupDto }) {
+  const t = useT();
   const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
   for (const m of group.Members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
   const total = group.Members.length;
@@ -812,7 +830,7 @@ function OverviewGroupRow({ group }: { group: MyGroupDto }) {
           <span className="sp-group-row-name">{group.Name}</span>
         </div>
         <div className="sp-group-row-meta">
-          <span className="sp-group-row-count">{total} ppl</span>
+          <span className="sp-group-row-count">{total} {t("ops.ppl")}</span>
         </div>
       </div>
       <div className="sp-group-row-breakdown">
@@ -823,8 +841,8 @@ function OverviewGroupRow({ group }: { group: MyGroupDto }) {
           {bd.Safe      > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--safe"     style={{ flex: bd.Safe }} />}
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {bd.NeedHelp  > 0 && <span className="sp-group-row-stat sp-group-row-stat--help">{bd.NeedHelp} help</span>}
-          {bd.Unknown   > 0 && <span className="sp-group-row-stat sp-group-row-stat--unknown">{bd.Unknown} unk</span>}
+          {bd.NeedHelp  > 0 && <span className="sp-group-row-stat sp-group-row-stat--help">{bd.NeedHelp} {t("ops.help")}</span>}
+          {bd.Unknown   > 0 && <span className="sp-group-row-stat sp-group-row-stat--unknown">{bd.Unknown} {t("ops.unk")}</span>}
         </div>
       </div>
     </div>
@@ -869,6 +887,7 @@ function GroupsPage({
   onJoined: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
+  const t = useT();
   const [groupName, setGroupName] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
@@ -979,7 +998,7 @@ function GroupsPage({
           <input
             className="sp-text-input"
             style={{ flex: 1, height: 28, fontSize: 12, padding: "0 8px" }}
-            placeholder="Search groups…"
+            placeholder={t("grp.searchGroups")}
             value={groupSearch}
             onChange={(e) => setGroupSearch(e.target.value)}
           />
@@ -1125,7 +1144,7 @@ function GroupDetails({
   isRequestingStatus,
   onRemoveMember,
   onUpdateRole,
-  onAddMember,
+  onAddMember: _onAddMember,
   onDeleteGroup,
   memberActionError,
 }: {
@@ -1147,9 +1166,9 @@ function GroupDetails({
   onDeleteGroup?: () => void;
   memberActionError?: string;
 }) {
+  const t = useT();
   const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
   const [memberSearch, setMemberSearch] = useState("");
-  const [memberId, setMemberId] = useState("");
 
   const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
   for (const m of members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
@@ -1175,7 +1194,7 @@ function GroupDetails({
           <span className="sp-group-header-name">{group.Name}</span>
           <span className="sp-mono sp-up"
             style={{ fontSize: 9, color: canManage ? "var(--sp-safe)" : "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
-            {canManage ? "● OWNER" : "● MEMBER"}
+            {canManage ? t("grp.owner") : t("grp.member")}
           </span>
           {/* Mobile: delete icon in header */}
           {onDeleteGroup && (
@@ -1187,12 +1206,12 @@ function GroupDetails({
           {/* Desktop: action buttons inline in header */}
           <span className="sp-desktop-only" style={{ marginLeft: "auto", gap: 8 }}>
             <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
-              <Send size={13} /> REQUEST STATUS
+              <Send size={13} /> {t("grp.requestStatus")}
             </button>
             {canManage && (
               <button className="sp-btn-icon" style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}
                 onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite link" type="button">
-                + ADD MEMBER
+                {t("grp.addMember")}
               </button>
             )}
           </span>
@@ -1219,7 +1238,7 @@ function GroupDetails({
       <div className="sp-mobile-only">
         <div className="sp-action-row">
           <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
-            <Send size={13} /> REQUEST STATUS
+            <Send size={13} /> {t("grp.requestStatus")}
           </button>
           {canManage && (
             <button className="sp-btn-icon" onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite" type="button">
@@ -1282,17 +1301,17 @@ function GroupDetails({
 
       {/* Filter chips */}
       <div className="sp-filter-chips">
-        <FilterChip label="ALL"  count={members.length} active={statusFilter === "All"}       onClick={() => setStatusFilter("All")} />
-        <FilterChip label="HELP" count={bd.NeedHelp}    status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
-        <FilterChip label="SHLT" count={bd.InShelter}   status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
-        <FilterChip label="SAFE" count={bd.Safe}        status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
-        <FilterChip label="UNK"  count={bd.Unknown}     status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
+        <FilterChip label={t("grp.all")}     count={members.length} active={statusFilter === "All"}       onClick={() => setStatusFilter("All")} />
+        <FilterChip label={t("grp.help")}    count={bd.NeedHelp}    status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
+        <FilterChip label={t("grp.shelter")} count={bd.InShelter}   status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
+        <FilterChip label={t("grp.safe")}    count={bd.Safe}        status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
+        <FilterChip label={t("grp.unknown")} count={bd.Unknown}     status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
         {/* Search input */}
         <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
           <input
             className="sp-text-input"
             style={{ height: 28, fontSize: 11, padding: "0 8px", width: 160 }}
-            placeholder="Search members…"
+            placeholder={t("grp.searchMembers")}
             value={memberSearch}
             onChange={(e) => setMemberSearch(e.target.value)}
           />
@@ -1307,11 +1326,11 @@ function GroupDetails({
       {/* Desktop: member table header */}
       <div className="sp-member-table-head">
         <span />
-        <span>NAME</span>
-        <span>ROLE</span>
-        <span>STATUS</span>
-        <span>LAST ACTIVE</span>
-        <span>ACTIONS</span>
+        <span>{t("grp.colName")}</span>
+        <span>{t("grp.colRole")}</span>
+        <span>{t("grp.colStatus")}</span>
+        <span>{t("grp.colLastActive")}</span>
+        <span>{t("grp.colActions")}</span>
       </div>
 
       {/* Member list */}
@@ -1364,11 +1383,15 @@ function MemberRow({
   onRemove?: () => void;
   onToggleAdmin?: () => void;
 }) {
+  const t = useT();
   const key = statusKey(member.Status);
   const initials = userInitials(member.UserName || member.Id);
   const colorVar = `var(--sp-${key})`;
   const urgent = member.Status === "NeedHelp";
   const displayName = member.UserName || member.Id;
+  const roleLabel = member.Role === "Owner" ? t("grp.roleOwner")
+    : member.Role === "Admin" ? t("grp.roleAdmin")
+    : t("grp.roleMember");
 
   const actions = (
     <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
@@ -1398,7 +1421,7 @@ function MemberRow({
         <div className="sp-member-info">
           <span className="sp-member-name">{displayName}</span>
           <div className="sp-member-meta">
-            <span>{member.Role || "Member"}</span>
+            <span>{roleLabel}</span>
             <span>·</span>
             <span>{formatDateTime(member.LastActiveAt)}</span>
           </div>
@@ -1416,7 +1439,7 @@ function MemberRow({
           <span className="sp-avatar-indicator" style={{ width: 8, height: 8, background: colorVar }} />
         </span>
         <span style={{ fontSize: 13, fontWeight: 600 }}>{displayName}</span>
-        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>{member.Role || "Member"}</span>
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>{roleLabel}</span>
         <StatusChip status={member.Status} />
         <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>{formatDateTime(member.LastActiveAt)}</span>
         {actions}
@@ -1426,11 +1449,12 @@ function MemberRow({
 }
 
 function StatusChip({ status }: { status: UserStatus }) {
+  const lang = useContext(LanguageContext);
   const key = statusKey(status);
   return (
     <span className={`sp-status-chip sp-status-chip--${key}`}>
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--sp-${key})` }} />
-      {STATUS_SHORT[status]}
+      {statusShort(status, lang)}
     </span>
   );
 }
@@ -1452,6 +1476,7 @@ function GroupRightRail({
   onAddMember: (userId: string) => void;
   onDeleteGroup?: () => void;
 }) {
+  const t = useT();
   const [memberId, setMemberId] = useState("");
   const admins = members.filter((m) => m.Role === "Admin" || m.Role === "Owner");
 
@@ -1460,26 +1485,26 @@ function GroupRightRail({
       {/* GROUP INFO */}
       <div>
         <div className="sp-section-head" style={{ marginBottom: 10 }}>
-          <span className="sp-section-head-label">GROUP INFO</span>
+          <span className="sp-section-head-label">{t("rail.groupInfo")}</span>
           <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
         </div>
         <div className="sp-group-kv-block">
           <div className="sp-group-kv">
-            <span className="sp-group-kv-k">CODE</span>
+            <span className="sp-group-kv-k">{t("rail.code")}</span>
             <span className="sp-group-kv-v">{groupCallsign(group.Name)}</span>
           </div>
           <div className="sp-group-kv">
-            <span className="sp-group-kv-k">MEMBERS</span>
+            <span className="sp-group-kv-k">{t("rail.members")}</span>
             <span className="sp-group-kv-v">{members.length}</span>
           </div>
           <div className="sp-group-kv">
-            <span className="sp-group-kv-k">ADMINS</span>
+            <span className="sp-group-kv-k">{t("rail.admins")}</span>
             <span className="sp-group-kv-v">{admins.length}</span>
           </div>
           <div className="sp-group-kv">
-            <span className="sp-group-kv-k">ROLE</span>
+            <span className="sp-group-kv-k">{t("rail.role")}</span>
             <span className="sp-group-kv-v" style={{ color: canManage ? "var(--sp-safe)" : "var(--sp-fg-2)" }}>
-              {canManage ? "OWNER" : "MEMBER"}
+              {canManage ? t("rail.roleOwner") : t("rail.roleMember")}
             </span>
           </div>
         </div>
@@ -1488,7 +1513,7 @@ function GroupRightRail({
       {/* INVITE LINK */}
       <div>
         <div className="sp-section-head" style={{ marginBottom: 10 }}>
-          <span className="sp-section-head-label">INVITE LINK</span>
+          <span className="sp-section-head-label">{t("rail.inviteLink")}</span>
           <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
         </div>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1503,14 +1528,14 @@ function GroupRightRail({
                 onClick={() => { void navigator.clipboard.writeText(latestInvite); }}
                 type="button"
               >
-                <Copy size={12} /> COPY LINK
+                <Copy size={12} /> {t("rail.copyLink")}
               </button>
             </div>
           )}
           {canManage && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               <div className="sp-input-row">
-                <input className="sp-text-input" placeholder="Invite note (optional)"
+                <input className="sp-text-input" placeholder={t("rail.inviteNotePlaceholder")}
                   value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
                 <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
                   <Copy size={14} />
@@ -1526,7 +1551,7 @@ function GroupRightRail({
       {admins.length > 0 && (
         <div>
           <div className="sp-section-head" style={{ marginBottom: 10 }}>
-            <span className="sp-section-head-label">ADMINS</span>
+            <span className="sp-section-head-label">{t("rail.admins")}</span>
             <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -1556,11 +1581,11 @@ function GroupRightRail({
       {canManage && (
         <div>
           <div className="sp-section-head" style={{ marginBottom: 10 }}>
-            <span className="sp-section-head-label">ADD MEMBER</span>
+            <span className="sp-section-head-label">{t("rail.addMember")}</span>
             <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
           </div>
           <div className="sp-input-row">
-            <input className="sp-text-input" placeholder="User ID"
+            <input className="sp-text-input" placeholder={t("rail.userIdPlaceholder")}
               value={memberId} onChange={(e) => setMemberId(e.target.value)} />
             <button className="sp-btn-icon" disabled={!memberId.trim()}
               onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">
@@ -1574,10 +1599,10 @@ function GroupRightRail({
       {onDeleteGroup && (
         <div style={{ marginTop: "auto", padding: 12, border: "1px solid var(--sp-help-dim)", background: "var(--sp-help-bg)" }}>
           <div className="sp-section-head" style={{ marginBottom: 8 }}>
-            <span className="sp-section-head-label" style={{ color: "var(--sp-help)" }}>DANGER ZONE</span>
+            <span className="sp-section-head-label" style={{ color: "var(--sp-help)" }}>{t("rail.dangerZone")}</span>
           </div>
           <button className="sp-btn-danger" style={{ width: "100%" }} onClick={onDeleteGroup} type="button">
-            Delete group
+            {t("rail.deleteGroup")}
           </button>
         </div>
       )}
@@ -1602,6 +1627,8 @@ function SettingsPage({
   onSubmit: (e: FormEvent) => void;
 }) {
   const queryClient = useQueryClient();
+  const t = useT();
+  const lang = useContext(LanguageContext);
   const [activeSection, setActiveSection] = useState("profile");
   const sk = statusKey(currentUser.Status);
 
@@ -1611,9 +1638,9 @@ function SettingsPage({
   });
 
   const navItems = [
-    { id: "profile",      label: "Profile",      icon: <ShieldCheck size={15} /> },
-    { id: "connectivity", label: "Connectivity", icon: <RefreshCw size={15} /> },
-    { id: "telegram",     label: "Telegram",     icon: <Bell size={15} /> },
+    { id: "profile",      label: t("set.profile"),      icon: <ShieldCheck size={15} /> },
+    { id: "connectivity", label: t("set.connectivity"), icon: <RefreshCw size={15} /> },
+    { id: "telegram",     label: t("set.telegram"),     icon: <Bell size={15} /> },
   ];
 
   return (
@@ -1633,7 +1660,7 @@ function SettingsPage({
               </div>
               <span className={`sp-status-chip sp-status-chip--${sk}`} style={{ fontSize: 9 }}>
                 <span style={{ width: 5, height: 5, borderRadius: "50%", background: `var(--sp-${sk})` }} />
-                {STATUS_SHORT[currentUser.Status]}
+                {statusShort(currentUser.Status, lang)}
               </span>
             </div>
           </div>
@@ -1684,14 +1711,14 @@ function SettingsPage({
           <div className="sp-settings-section-head">
             <div className="sp-section-head">
               <span className="sp-section-head-label">
-                <span className="sp-section-head-code">00</span>PROFILE
+                <span className="sp-section-head-code">00</span>{t("set.sectionProfile")}
               </span>
             </div>
           </div>
           <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)", display: "flex", flexDirection: "column", gap: 12 }}>
             <div>
               <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
-                INTERFACE LANGUAGE
+                {t("set.interfaceLang")}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 {(["en", "uk"] as const).map((lang) => {
@@ -1705,7 +1732,7 @@ function SettingsPage({
                       style={active ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" } : {}}
                       onClick={() => { if (!active) setLanguage.mutate(lang); }}
                     >
-                      {lang === "en" ? "English" : "Українська"}
+                      {lang === "en" ? t("set.langEn") : t("set.langUk")}
                     </button>
                   );
                 })}
@@ -1724,22 +1751,22 @@ function SettingsPage({
           <div className="sp-settings-section-head">
             <div className="sp-section-head">
               <span className="sp-section-head-label">
-                <span className="sp-section-head-code">01</span>CONNECTIVITY
+                <span className="sp-section-head-code">01</span>{t("set.sectionConn")}
               </span>
             </div>
           </div>
           <form className="sp-settings-form" onSubmit={onSubmit}
             style={{ borderTop: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
-            <SpField label="API URL" placeholder="Same origin"
+            <SpField label={t("set.apiUrl")} placeholder="Same origin"
               value={draftSettings.apiBaseUrl}
               onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
-            <SpField label="DEV USER ID" value={draftSettings.devUserId}
+            <SpField label={t("set.devUserId")} value={draftSettings.devUserId}
               onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
-            <SpField label="DEV USER NAME" value={draftSettings.devUserName}
+            <SpField label={t("set.devUserName")} value={draftSettings.devUserName}
               onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
             <div>
               <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
-                OVERVIEW BLOCK SIZE
+                {t("set.blockSize")}
               </div>
               <div style={{ display: "flex", gap: 6 }}>
                 {(["small", "medium", "large"] as const).map((size) => (
@@ -1752,13 +1779,13 @@ function SettingsPage({
                       : {}}
                     onClick={() => setDraftSettings({ ...draftSettings, overviewBlockSize: size })}
                   >
-                    {size.toUpperCase()}
+                    {size === "small" ? t("set.blockSmall") : size === "medium" ? t("set.blockMedium") : t("set.blockLarge")}
                   </button>
                 ))}
               </div>
             </div>
             <button className="sp-field-save-btn" type="submit">
-              <Save size={13} /> SAVE
+              <Save size={13} /> {t("set.save")}
             </button>
           </form>
         </div>
@@ -1780,6 +1807,7 @@ function TelegramLinkPanel({
   currentUser: UserDto;
 }) {
   const queryClient = useQueryClient();
+  const t = useT();
   const [codeId, setCodeId] = useState<string | null>(null);
 
   const createCode = useMutation({
@@ -1812,10 +1840,10 @@ function TelegramLinkPanel({
       <div className="sp-settings-section-head">
         <div className="sp-section-head">
           <span className="sp-section-head-label">
-            <span className="sp-section-head-code">02</span>TELEGRAM
+            <span className="sp-section-head-code">02</span>{t("set.sectionTelegram")}
           </span>
           <span className="sp-mono" style={{ fontSize: 10, color: currentUser.ChatId ? "var(--sp-shelter)" : "var(--sp-fg-3)" }}>
-            {currentUser.ChatId ? "● LINKED" : "● NOT LINKED"}
+            {currentUser.ChatId ? t("set.linked") : t("set.notLinked")}
           </span>
         </div>
       </div>
@@ -1824,32 +1852,32 @@ function TelegramLinkPanel({
           <div style={{ padding: 12, border: "1px solid var(--sp-shelter-dim)", background: "var(--sp-shelter-bg)", display: "flex", alignItems: "center", gap: 12 }}>
             <span style={{ width: 32, height: 32, border: "1px solid var(--sp-shelter)", color: "var(--sp-shelter)", display: "inline-flex", alignItems: "center", justifyContent: "center", fontWeight: 700 }}>T</span>
             <div style={{ flex: 1 }}>
-              <div style={{ fontSize: 13, fontWeight: 600 }}>Telegram is linked</div>
-              <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>ChatId: {currentUser.ChatId}</div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{t("set.telegramLinked")}</div>
+              <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>{t("set.chatId")}: {currentUser.ChatId}</div>
             </div>
             <button className="sp-btn-danger" disabled={disconnect.isPending}
-              onClick={() => { if (window.confirm("Disconnect Telegram?")) disconnect.mutate(); }} type="button">
-              UNLINK
+              onClick={() => { if (window.confirm(t("set.disconnect") + "?")) disconnect.mutate(); }} type="button">
+              {t("set.unlink")}
             </button>
           </div>
         ) : (
           <button className="sp-btn-action" disabled={createCode.isPending} onClick={() => createCode.mutate()} type="button">
-            <TelegramIcon /> LINK TELEGRAM
+            <TelegramIcon /> {t("set.connectTelegram")}
           </button>
         )}
 
         {createCode.data && (
           <div style={{ padding: 12, border: "1px solid var(--sp-border)", background: "var(--sp-bg)" }}>
-            <p className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>SEND TO BOT</p>
+            <p className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>{t("set.sendCode")}</p>
             <p className="sp-mono" style={{ fontSize: 18, color: "var(--sp-fg)", marginTop: 6 }}>/link {createCode.data.Code}</p>
             <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", marginTop: 4 }}>
               Expires: {formatDateTime(createCode.data.ExpiresAt)}
             </p>
             {linkStatus.data?.IsConsumed && (
-              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-safe)", marginTop: 6 }}>● Telegram account connected.</p>
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-safe)", marginTop: 6 }}>● {t("set.linkedSuccess")}</p>
             )}
             {linkStatus.data?.IsExpired && !linkStatus.data.IsConsumed && (
-              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-help)", marginTop: 6 }}>● Code expired. Create a new one.</p>
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-help)", marginTop: 6 }}>● {t("set.expiredDesc")}</p>
             )}
           </div>
         )}
