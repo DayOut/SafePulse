@@ -331,7 +331,6 @@ export default function App() {
             groups={myGroups.data ?? []}
             isLoading={myGroups.isLoading}
             onRefresh={() => void myGroups.refetch()}
-            blockSize={settings.overviewBlockSize}
           />
         )}
 
@@ -627,12 +626,10 @@ function OverviewPage({
   groups,
   isLoading,
   onRefresh,
-  blockSize,
 }: {
   groups: MyGroupDto[];
   isLoading: boolean;
   onRefresh: () => void;
-  blockSize: AppSettings["overviewBlockSize"];
 }) {
   var totals = { Unknown: 0, Safe: 0, NeedHelp: 0, InShelter: 0 } as Record<UserStatus, number>;
   var countedUserIds = new Set<string>();
@@ -649,48 +646,30 @@ function OverviewPage({
   return (
     <section className="min-w-0 lg:col-span-2">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex flex-wrap gap-2">
-          <OverviewLegend label="Safe" status="Safe" value={totals.Safe} />
-          <OverviewLegend label="Shelter" status="InShelter" value={totals.InShelter} />
-          <OverviewLegend label="Help" status="NeedHelp" value={totals.NeedHelp} />
-          <OverviewLegend label="Unknown" status="Unknown" value={totals.Unknown} />
-        </div>
+        <h2 className="text-sm font-semibold text-neutral-300">Overview</h2>
         <button className="icon-button" onClick={onRefresh} title="Refresh overview" type="button">
           <RefreshCw className="h-4 w-4" />
         </button>
       </div>
       {isLoading && <p className="text-sm text-neutral-400">Loading overview...</p>}
       {!isLoading && groups.length === 0 && <p className="text-sm text-neutral-400">No groups for this user yet.</p>}
-      <div className={`overview-groups overview-size-${blockSize}`}>
-        {groups.map((group) => (
-          <section className="overview-group" key={group.Id}>
-            <div className="mb-2 flex items-center justify-between gap-2">
-              <h2 className="truncate text-sm font-semibold">{group.Name}</h2>
-              <span className="text-xs text-neutral-500">{group.Members.length}</span>
-            </div>
-            <div className="status-tile-grid">
-              {group.Members.map((member) => (
-                <span
-                  aria-label={`${member.UserName || member.Id}: ${member.Status}`}
-                  className={`status-tile ${member.Status.toLowerCase()}`}
-                  key={member.Id}
-                  title={`${member.UserName || member.Id} - ${member.Status}`}
-                />
-              ))}
-            </div>
-          </section>
-        ))}
+      <div className="overview-status-grid">
+        <OverviewStatusBlock label="Safe" status="Safe" value={totals.Safe} />
+        <OverviewStatusBlock label="Shelter" status="InShelter" value={totals.InShelter} />
+        <OverviewStatusBlock label="Help" status="NeedHelp" value={totals.NeedHelp} />
+        <OverviewStatusBlock label="Unknown" status="Unknown" value={totals.Unknown} />
       </div>
     </section>
   );
 }
 
-function OverviewLegend({ label, status, value }: { label: string; status: UserStatus; value: number }) {
+function OverviewStatusBlock({ label, status, value }: { label: string; status: UserStatus; value: number }) {
   return (
-    <span className="overview-legend">
+    <section className={`overview-status-block ${status.toLowerCase()}`}>
       <span className={`status-tile ${status.toLowerCase()}`} />
-      {label}: {value}
-    </span>
+      <span className="text-sm font-semibold text-neutral-300">{label}</span>
+      <strong>{value}</strong>
+    </section>
   );
 }
 
@@ -833,6 +812,7 @@ function GroupsPage({
             latestInvite={latestInvite}
             latestStatusRequest={latestStatusRequest}
             members={selectedGroup.Members}
+            blockSize={settings.overviewBlockSize}
             onInviteNoteChange={setInviteNote}
             onCreateInvite={() => createInviteMutation.mutate()}
             isCreatingInvite={createInviteMutation.isPending}
@@ -898,6 +878,7 @@ function GroupDetails({
   latestInvite,
   latestStatusRequest,
   isCreatingInvite,
+  blockSize,
   onInviteNoteChange,
   onCreateInvite,
   onRequestStatus,
@@ -916,6 +897,7 @@ function GroupDetails({
   latestInvite: string | null;
   latestStatusRequest: string | null;
   isCreatingInvite: boolean;
+  blockSize: AppSettings["overviewBlockSize"];
   onInviteNoteChange: (value: string) => void;
   onCreateInvite: () => void;
   onRequestStatus: () => void;
@@ -928,6 +910,7 @@ function GroupDetails({
   memberActionError?: string;
 }) {
   const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
+  const [viewMode, setViewMode] = useState<"list" | "compact">("list");
   const [memberId, setMemberId] = useState("");
   const filteredMembers = useMemo(() => {
     return [...members]
@@ -993,6 +976,14 @@ function GroupDetails({
       {latestStatusRequest && <p className="mb-4 rounded-md border border-emerald-700 bg-emerald-950 px-3 py-2 text-sm text-emerald-100">{latestStatusRequest}</p>}
       {requestStatusError && <p className="mb-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{requestStatusError}</p>}
       {memberActionError && <p className="mb-4 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">{memberActionError}</p>}
+      <div className="mb-3 segmented-control w-fit">
+        <button className={`tab-button ${viewMode === "list" ? "active" : ""}`} onClick={() => setViewMode("list")} type="button">
+          List
+        </button>
+        <button className={`tab-button ${viewMode === "compact" ? "active" : ""}`} onClick={() => setViewMode("compact")} type="button">
+          Compact
+        </button>
+      </div>
       <div className="mb-3 flex flex-wrap gap-2">
         <StatusFilterButton active={statusFilter === "All"} label="All" onClick={() => setStatusFilter("All")} />
         <StatusFilterButton active={statusFilter === "NeedHelp"} label="Help" status="NeedHelp" onClick={() => setStatusFilter("NeedHelp")} />
@@ -1000,16 +991,40 @@ function GroupDetails({
         <StatusFilterButton active={statusFilter === "Safe"} label="Safe" status="Safe" onClick={() => setStatusFilter("Safe")} />
         <StatusFilterButton active={statusFilter === "Unknown"} label="Unknown" status="Unknown" onClick={() => setStatusFilter("Unknown")} />
       </div>
-      <div className="divide-y divide-neutral-800 rounded-md border border-neutral-800">
-        {filteredMembers.map((member) => (
-          <MemberRow
-            member={member}
+      {viewMode === "compact" ? (
+        <GroupCompactView blockSize={blockSize} members={filteredMembers} />
+      ) : (
+        <div className="divide-y divide-neutral-800 rounded-md border border-neutral-800">
+          {filteredMembers.map((member) => (
+            <MemberRow
+              member={member}
+              key={member.Id}
+              onRemove={member.CanManage ? () => onRemoveMember(member.Id) : undefined}
+              onToggleAdmin={canManage && member.Role !== "Owner" ? () => onUpdateRole(member.Id, member.Role === "Admin" ? "Member" : "Admin") : undefined}
+            />
+          ))}
+          {filteredMembers.length === 0 && <p className="px-3 py-4 text-sm text-neutral-400">No users with this status.</p>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GroupCompactView({ blockSize, members }: { blockSize: AppSettings["overviewBlockSize"]; members: GroupMemberDto[] }) {
+  if (members.length === 0)
+    return <p className="rounded-md border border-neutral-800 px-3 py-4 text-sm text-neutral-400">No users with this status.</p>;
+
+  return (
+    <div className={`group-compact-view overview-size-${blockSize}`}>
+      <div className="status-tile-grid">
+        {members.map((member) => (
+          <span
+            aria-label={`${member.UserName || member.Id}: ${member.Status}`}
+            className={`status-tile ${member.Status.toLowerCase()}`}
             key={member.Id}
-            onRemove={member.CanManage ? () => onRemoveMember(member.Id) : undefined}
-            onToggleAdmin={canManage && member.Role !== "Owner" ? () => onUpdateRole(member.Id, member.Role === "Admin" ? "Member" : "Admin") : undefined}
+            title={`${member.UserName || member.Id} - ${member.Status}`}
           />
         ))}
-        {filteredMembers.length === 0 && <p className="px-3 py-4 text-sm text-neutral-400">No users with this status.</p>}
       </div>
     </div>
   );
