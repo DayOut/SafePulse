@@ -1350,6 +1350,102 @@ button, input {
 }
 
 /* ============================================================
+   OPS — desktop 2-column layout
+   ============================================================ */
+.sp-ops-layout {
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-ops-rail { display: none; }
+
+@media (min-width: 900px) {
+  .sp-ops-layout {
+    display: grid;
+    grid-template-columns: 1fr 340px;
+    height: calc(100dvh - 58px);
+    overflow: hidden;
+  }
+
+  .sp-ops-main {
+    overflow-y: auto;
+    height: 100%;
+    padding-bottom: 140px;
+  }
+
+  .sp-ops-rail {
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
+    border-left: 1px solid var(--sp-border);
+    padding: 20px;
+    overflow-y: auto;
+    height: 100%;
+    padding-bottom: 140px;
+  }
+
+  /* On desktop, sections in the main panel get more padding */
+  .sp-ops-main .sp-section {
+    padding: 14px 24px 8px;
+  }
+}
+
+/* ============================================================
+   Settings — desktop 2-column layout
+   ============================================================ */
+.sp-settings-layout {
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-settings-nav { display: none; }
+
+.sp-settings-nav-item {
+  padding: 12px 20px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  cursor: pointer;
+  border-left: 2px solid transparent;
+  color: var(--sp-fg-2);
+  font-size: 13px;
+  transition: background 0.1s;
+}
+.sp-settings-nav-item:hover { background: var(--sp-hover); }
+.sp-settings-nav-item--active {
+  background: var(--sp-raised);
+  border-left-color: var(--sp-fg);
+  color: var(--sp-fg);
+  font-weight: 600;
+}
+.sp-settings-nav-item--danger { color: var(--sp-help); }
+
+@media (min-width: 900px) {
+  .sp-settings-layout {
+    display: grid;
+    grid-template-columns: 240px 1fr;
+    height: calc(100dvh - 58px);
+    overflow: hidden;
+  }
+
+  .sp-settings-nav {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid var(--sp-border);
+    overflow-y: auto;
+    height: 100%;
+    padding: 16px 0;
+  }
+
+  .sp-settings-content {
+    overflow-y: auto;
+    height: 100%;
+    padding-bottom: 140px;
+    max-width: 800px;
+  }
+}
+
+/* ============================================================
    Groups — desktop 3-column layout
    ============================================================ */
 .sp-groups-layout {

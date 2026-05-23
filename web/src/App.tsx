@@ -99,6 +99,7 @@ export default function App() {
   const [connectionState, setConnectionState] = useState("Disconnected");
   const [statusRequest, setStatusRequest] = useState<GroupStatusRequestedDto | null>(null);
   const [statusChangedMessage, setStatusChangedMessage] = useState<string | null>(null);
+  const [recentStatusChanges, setRecentStatusChanges] = useState<StatusChangedDto[]>([]);
   const statusConnectionRef = useRef<HubConnection | null>(null);
 
   useEffect(() => {
@@ -215,6 +216,7 @@ export default function App() {
         );
         if (shouldRefetchGroups)
           void queryClient.invalidateQueries({ queryKey: ["my-groups"] });
+        setRecentStatusChanges((prev) => [message, ...prev].slice(0, 14));
       },
       (rawMessage) => {
         const message = normalizeGroupStatusRequested(rawMessage);
@@ -329,13 +331,18 @@ export default function App() {
       </header>
 
       {/* ── Page content ── */}
-      <div className="app-content" style={{ maxWidth: activeTab === "groups" ? undefined : 1280, margin: "0 auto", padding: "0 0" }}>
+      <div className="app-content">
         {activeTab === "overview" && (
           <OverviewPage
             groups={myGroups.data ?? []}
             isLoading={myGroups.isLoading}
             onRefresh={() => void myGroups.refetch()}
             activeStatus={activeStatus}
+            recentStatusChanges={recentStatusChanges}
+            onRequestAllStatus={() => {
+              for (const g of myGroups.data ?? [])
+                void requestGroupStatusUpdate(settings, session.AccessToken, g.Id);
+            }}
           />
         )}
         {activeTab === "groups" && (
@@ -586,11 +593,15 @@ function OverviewPage({
   isLoading,
   onRefresh,
   activeStatus,
+  recentStatusChanges,
+  onRequestAllStatus,
 }: {
   groups: MyGroupDto[];
   isLoading: boolean;
   onRefresh: () => void;
   activeStatus: UserStatus;
+  recentStatusChanges: StatusChangedDto[];
+  onRequestAllStatus: () => void;
 }) {
   const totals = { Unknown: 0, Safe: 0, NeedHelp: 0, InShelter: 0 } as Record<UserStatus, number>;
   const seen = new Set<string>();
@@ -606,84 +617,162 @@ function OverviewPage({
   const sKey = statusKey(activeStatus);
   const StatusIcon = activeStatus === "Safe" ? ShieldCheck : activeStatus === "InShelter" ? DoorOpen : ShieldAlert;
 
+  const lastReportBlock = (
+    <div className={`sp-last-report sp-last-report--${sKey}`}>
+      <span className="sp-last-report-icon">
+        <StatusIcon size={18} strokeWidth={1.6} />
+      </span>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div className="sp-last-report-label">{STATUS_LABELS[activeStatus]}</div>
+        <div className="sp-last-report-sub">
+          Broadcasting to {groups.length} group{groups.length !== 1 ? "s" : ""}
+        </div>
+      </div>
+    </div>
+  );
+
   return (
-    <div className="sp-page">
-      {/* Last report */}
-      <div className="sp-section">
-        <div className="sp-section-head">
-          <span className="sp-section-head-label">
-            <span className="sp-section-head-code">01</span>YOUR LAST REPORT
-          </span>
-          <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
-            USE CLUSTER ↓
-          </span>
-        </div>
-        <div className={`sp-last-report sp-last-report--${sKey}`}>
-          <span className="sp-last-report-icon">
-            <StatusIcon size={18} strokeWidth={1.6} />
-          </span>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div className="sp-last-report-label">
-              {STATUS_LABELS[activeStatus]}
-            </div>
-            <div className="sp-last-report-sub">
-              Broadcasting to {groups.length} group{groups.length !== 1 ? "s" : ""}
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Aggregates */}
-      <div className="sp-section" style={{ marginTop: 6 }}>
-        <div className="sp-section-head">
-          <span className="sp-section-head-label">
-            <span className="sp-section-head-code">02</span>NETWORK STATUS
-          </span>
-          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-            <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", fontVariantNumeric: "tabular-nums" }}>
-              {total} people · {groups.length} groups
-            </span>
-            <button onClick={onRefresh} type="button"
-              style={{ background: "none", border: "none", cursor: "pointer", color: "var(--sp-fg-3)", display: "flex" }}>
-              <RefreshCw size={13} />
-            </button>
-          </div>
-        </div>
-        {isLoading && (
-          <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", marginTop: 10 }}>LOADING…</p>
-        )}
-        {!isLoading && (
-          <div className="sp-stat-grid">
-            <StatTile status="NeedHelp" value={totals.NeedHelp} total={total} label="HELP" />
-            <StatTile status="Unknown"  value={totals.Unknown}  total={total} label="UNK" />
-            <StatTile status="InShelter" value={totals.InShelter} total={total} label="SHLT" />
-            <StatTile status="Safe"     value={totals.Safe}     total={total} label="SAFE" />
-          </div>
-        )}
-      </div>
-
-      {/* Groups summary */}
-      {!isLoading && groups.length > 0 && (
-        <div style={{ marginTop: 14 }}>
+    <div className="sp-ops-layout">
+      {/* ── Left: main content ─────────────────────────────── */}
+      <div className="sp-ops-main sp-page">
+        {/* Mobile-only: last report at top */}
+        <div className="sp-mobile-only">
           <div className="sp-section">
             <div className="sp-section-head">
               <span className="sp-section-head-label">
-                <span className="sp-section-head-code">03</span>MY GROUPS
+                <span className="sp-section-head-code">01</span>YOUR LAST REPORT
               </span>
+              <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>USE CLUSTER ↓</span>
+            </div>
+            {lastReportBlock}
+          </div>
+        </div>
+
+        {/* Aggregates */}
+        <div className="sp-section" style={{ marginTop: 6 }}>
+          <div className="sp-section-head">
+            <span className="sp-section-head-label">
+              <span className="sp-section-head-code">02</span>NETWORK STATUS
+            </span>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", fontVariantNumeric: "tabular-nums" }}>
+                {total} people · {groups.length} groups
+              </span>
+              <button onClick={onRefresh} type="button"
+                style={{ background: "none", border: "none", cursor: "pointer", color: "var(--sp-fg-3)", display: "flex" }}>
+                <RefreshCw size={13} />
+              </button>
             </div>
           </div>
-          <div className="sp-group-list" style={{ marginTop: 10 }}>
-            {groups.map((g) => <OverviewGroupRow key={g.Id} group={g} />)}
+          {isLoading && (
+            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", marginTop: 10 }}>LOADING…</p>
+          )}
+          {!isLoading && (
+            <div className="sp-stat-grid">
+              <StatTile status="NeedHelp"  value={totals.NeedHelp}  total={total} label="HELP" />
+              <StatTile status="Unknown"   value={totals.Unknown}   total={total} label="UNK" />
+              <StatTile status="InShelter" value={totals.InShelter} total={total} label="SHLT" />
+              <StatTile status="Safe"      value={totals.Safe}      total={total} label="SAFE" />
+            </div>
+          )}
+        </div>
+
+        {/* Groups summary */}
+        {!isLoading && groups.length > 0 && (
+          <div style={{ marginTop: 14 }}>
+            <div className="sp-section">
+              <div className="sp-section-head">
+                <span className="sp-section-head-label">
+                  <span className="sp-section-head-code">03</span>MY GROUPS · {groups.length} ACTIVE
+                </span>
+              </div>
+            </div>
+            <div className="sp-group-list" style={{ marginTop: 10 }}>
+              {groups.map((g) => <OverviewGroupRow key={g.Id} group={g} />)}
+            </div>
           </div>
+        )}
+        {!isLoading && groups.length === 0 && (
+          <div className="sp-section" style={{ marginTop: 6 }}>
+            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>
+              No groups yet — go to GRP tab to create or join one.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* ── Right rail (desktop only) ──────────────────────── */}
+      <div className="sp-ops-rail">
+        {/* YOUR LAST REPORT */}
+        <div>
+          <div className="sp-section-head" style={{ marginBottom: 10 }}>
+            <span className="sp-section-head-label">YOUR LAST REPORT</span>
+            <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>USE CLUSTER ↓</span>
+          </div>
+          {lastReportBlock}
         </div>
-      )}
-      {!isLoading && groups.length === 0 && (
-        <div className="sp-section" style={{ marginTop: 6 }}>
-          <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>
-            No groups yet — go to GRP tab to create or join one.
-          </p>
+
+        {/* Network summary KV */}
+        <div className="sp-group-kv-block">
+          <div className="sp-group-kv">
+            <span className="sp-group-kv-k">VISIBLE TO</span>
+            <span className="sp-group-kv-v">{groups.length} GROUPS</span>
+          </div>
+          <div className="sp-group-kv">
+            <span className="sp-group-kv-k">NETWORK</span>
+            <span className="sp-group-kv-v">{total} PEOPLE</span>
+          </div>
+          {totals.NeedHelp > 0 && (
+            <div className="sp-group-kv">
+              <span className="sp-group-kv-k">NEED HELP</span>
+              <span className="sp-group-kv-v" style={{ color: "var(--sp-help)" }}>{totals.NeedHelp}</span>
+            </div>
+          )}
         </div>
-      )}
+
+        {/* Request all status */}
+        <button
+          className="sp-btn-action"
+          style={{ border: "1px solid var(--sp-shelter-dim)", background: "var(--sp-shelter-bg)", color: "var(--sp-shelter)" }}
+          onClick={onRequestAllStatus}
+          disabled={groups.length === 0}
+          type="button"
+        >
+          <Bell size={13} /> REQUEST STATUS · ALL GROUPS
+        </button>
+
+        {/* Live feed */}
+        <div>
+          <div className="sp-section-head" style={{ marginBottom: 12 }}>
+            <span className="sp-section-head-label">LIVE FEED</span>
+            {recentStatusChanges.length > 0 && (
+              <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-4)", letterSpacing: "0.08em" }}>STREAM</span>
+            )}
+          </div>
+          {recentStatusChanges.length === 0 ? (
+            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-4)" }}>Waiting for status updates…</p>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {recentStatusChanges.map((e, i) => {
+                const ek = statusKey(e.Status);
+                return (
+                  <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
+                    <span className="sp-mono sp-tab" style={{ fontSize: 10, color: "var(--sp-fg-4)", paddingTop: 2, flexShrink: 0 }}>
+                      {new Date(e.LastActiveAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                    </span>
+                    <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--sp-${ek})`, marginTop: 5, flexShrink: 0 }} />
+                    <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
+                      <span style={{ fontSize: 11, color: "var(--sp-fg)" }}>
+                        {e.UserName || e.UserId} → {STATUS_SHORT[e.Status]}
+                      </span>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }
@@ -1492,70 +1581,125 @@ function SettingsPage({
   currentUser: UserDto;
   onSubmit: (e: FormEvent) => void;
 }) {
+  const [activeSection, setActiveSection] = useState("profile");
+  const sk = statusKey(currentUser.Status);
+
+  const navItems = [
+    { id: "profile",      label: "Profile",      icon: <ShieldCheck size={15} /> },
+    { id: "connectivity", label: "Connectivity", icon: <RefreshCw size={15} /> },
+    { id: "telegram",     label: "Telegram",     icon: <Bell size={15} /> },
+  ];
+
   return (
-    <div>
-      {/* Profile card */}
-      <div className="sp-profile-card" style={{ borderTop: "1px solid var(--sp-border)" }}>
-        <span className="sp-avatar" style={{ width: 48, height: 48, fontSize: 16, borderRadius: 0 }}>
-          {userInitials(currentUser.UserName || "")}
-          <span className="sp-avatar-indicator"
-            style={{ width: 12, height: 12, background: `var(--sp-${statusKey(currentUser.Status)})` }} />
-        </span>
-        <div className="sp-profile-info">
-          <span className="sp-profile-name">{currentUser.UserName}</span>
-          <span className="sp-profile-email">{currentUser.Id}</span>
-          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
-            <StatusChip status={currentUser.Status} />
-          </div>
-        </div>
-      </div>
-
-      {/* API settings section */}
-      <div className="sp-settings-section">
-        <div className="sp-settings-section-head">
-          <div className="sp-section-head">
-            <span className="sp-section-head-label">
-              <span className="sp-section-head-code">01</span>CONNECTIVITY
+    <div className="sp-settings-layout">
+      {/* ── Left nav (desktop only) ─────────────────────────── */}
+      <div className="sp-settings-nav">
+        {/* Profile card in nav */}
+        <div style={{ padding: "16px 16px 14px", borderBottom: "1px solid var(--sp-border)", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+            <span className="sp-avatar" style={{ width: 36, height: 36, fontSize: 12, borderRadius: 0, flexShrink: 0 }}>
+              {userInitials(currentUser.UserName || "")}
+              <span className="sp-avatar-indicator" style={{ width: 9, height: 9, background: `var(--sp-${sk})` }} />
             </span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {currentUser.UserName}
+              </div>
+              <span className={`sp-status-chip sp-status-chip--${sk}`} style={{ fontSize: 9 }}>
+                <span style={{ width: 5, height: 5, borderRadius: "50%", background: `var(--sp-${sk})` }} />
+                {STATUS_SHORT[currentUser.Status]}
+              </span>
+            </div>
           </div>
         </div>
-        <form className="sp-settings-form" onSubmit={onSubmit}
-          style={{ borderTop: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
-          <SpField label="API URL" placeholder="Same origin"
-            value={draftSettings.apiBaseUrl}
-            onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
-          <SpField label="DEV USER ID" value={draftSettings.devUserId}
-            onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
-          <SpField label="DEV USER NAME" value={draftSettings.devUserName}
-            onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
-          <div>
-            <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
-              OVERVIEW BLOCK SIZE
-            </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {(["small", "medium", "large"] as const).map((size) => (
-                <button
-                  key={size}
-                  type="button"
-                  className="sp-filter-chip"
-                  style={draftSettings.overviewBlockSize === size
-                    ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
-                    : {}}
-                  onClick={() => setDraftSettings({ ...draftSettings, overviewBlockSize: size })}
-                >
-                  {size.toUpperCase()}
-                </button>
-              ))}
-            </div>
+
+        {navItems.map((item) => (
+          <div
+            key={item.id}
+            className={`sp-settings-nav-item ${activeSection === item.id ? "sp-settings-nav-item--active" : ""}`}
+            onClick={() => setActiveSection(item.id)}
+          >
+            <span style={{ color: activeSection === item.id ? "var(--sp-fg)" : "var(--sp-fg-3)" }}>{item.icon}</span>
+            {item.label}
           </div>
-          <button className="sp-field-save-btn" type="submit">
-            <Save size={13} /> SAVE
-          </button>
-        </form>
+        ))}
       </div>
 
-      {/* Telegram section */}
-      <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
+      {/* ── Right: settings content ──────────────────────────── */}
+      <div className="sp-settings-content">
+        {/* Profile card (mobile) */}
+        <div className="sp-profile-card sp-mobile-only" style={{ borderTop: "1px solid var(--sp-border)" }}>
+          <span className="sp-avatar" style={{ width: 48, height: 48, fontSize: 16, borderRadius: 0 }}>
+            {userInitials(currentUser.UserName || "")}
+            <span className="sp-avatar-indicator"
+              style={{ width: 12, height: 12, background: `var(--sp-${sk})` }} />
+          </span>
+          <div className="sp-profile-info">
+            <span className="sp-profile-name">{currentUser.UserName}</span>
+            <span className="sp-profile-email">{currentUser.Id}</span>
+            <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+              <StatusChip status={currentUser.Status} />
+            </div>
+          </div>
+        </div>
+
+        {/* Desktop: section title */}
+        <div className="sp-desktop-only" style={{ padding: "20px 24px 0", flexDirection: "column", gap: 4 }}>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>
+            {navItems.find((n) => n.id === activeSection)?.label ?? "Settings"}
+          </div>
+          <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginTop: 4 }}>
+            {currentUser.UserName} · {currentUser.Id}
+          </div>
+        </div>
+
+        {/* Connectivity */}
+        <div className="sp-settings-section">
+          <div className="sp-settings-section-head">
+            <div className="sp-section-head">
+              <span className="sp-section-head-label">
+                <span className="sp-section-head-code">01</span>CONNECTIVITY
+              </span>
+            </div>
+          </div>
+          <form className="sp-settings-form" onSubmit={onSubmit}
+            style={{ borderTop: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
+            <SpField label="API URL" placeholder="Same origin"
+              value={draftSettings.apiBaseUrl}
+              onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
+            <SpField label="DEV USER ID" value={draftSettings.devUserId}
+              onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
+            <SpField label="DEV USER NAME" value={draftSettings.devUserName}
+              onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
+            <div>
+              <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
+                OVERVIEW BLOCK SIZE
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["small", "medium", "large"] as const).map((size) => (
+                  <button
+                    key={size}
+                    type="button"
+                    className="sp-filter-chip"
+                    style={draftSettings.overviewBlockSize === size
+                      ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
+                      : {}}
+                    onClick={() => setDraftSettings({ ...draftSettings, overviewBlockSize: size })}
+                  >
+                    {size.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <button className="sp-field-save-btn" type="submit">
+              <Save size={13} /> SAVE
+            </button>
+          </form>
+        </div>
+
+        {/* Telegram */}
+        <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
+      </div>
     </div>
   );
 }
