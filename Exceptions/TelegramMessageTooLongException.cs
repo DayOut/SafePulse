@@ -21,7 +21,8 @@ public class TelegramMessageTooLongException : Exception
     public static bool IsTelegramMessageTooLong(ApiRequestException ex)
     {
         return ex.ErrorCode == 400 &&
-            ex.Message.Contains("message is too long", StringComparison.OrdinalIgnoreCase);
+            (ex.Message.Contains("message is too long", StringComparison.OrdinalIgnoreCase) ||
+                ex.Message.Contains("text is too long", StringComparison.OrdinalIgnoreCase));
     }
 
     private static string BuildPreview(string? text)

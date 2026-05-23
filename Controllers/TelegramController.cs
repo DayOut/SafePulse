@@ -29,6 +29,7 @@ public class TelegramController(
     ILogger<TelegramController> logger)
     : ControllerBase
 {
+    private const int MaxTelegramMessageLength = 3900;
     private readonly TelegramOptions _opts = opts.Value;
 
     public const string BotUsername = "safe_pulse_test_bot";
@@ -88,26 +89,70 @@ public class TelegramController(
 
         var reply = result?.ReplyText ?? localizer.Text("telegram.commands", user.Language);
 
-        try
+        var chunks = SplitMessage(reply);
+        for (var index = 0; index < chunks.Count; index++)
         {
-            await bot.SendMessage(
-                chatId,
-                reply,
-                replyMarkup: result?.UseStatusKeyboard == true ? BuildStatusKeyboard(user.Language) : null,
-                cancellationToken: ct);
-        }
-        catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
-        {
-            var tooLong = new TelegramMessageTooLongException(chatId, reply, ex);
-            logger.LogError(
-                tooLong,
-                "Telegram webhook reply is too long. ChatId: {ChatId}, TextLength: {TextLength}, TextPreview: {TextPreview}",
-                tooLong.ChatId,
-                tooLong.TextLength,
-                tooLong.TextPreview);
-            throw tooLong;
+            var chunk = chunks[index];
+            try
+            {
+                await bot.SendMessage(
+                    chatId,
+                    chunk,
+                    replyMarkup: result?.UseStatusKeyboard == true && index == chunks.Count - 1
+                        ? BuildStatusKeyboard(user.Language)
+                        : null,
+                    cancellationToken: ct);
+            }
+            catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
+            {
+                var tooLong = new TelegramMessageTooLongException(chatId, chunk, ex);
+                logger.LogError(
+                    tooLong,
+                    "Telegram webhook reply chunk is too long. ChatId: {ChatId}, ChunkIndex: {ChunkIndex}, TextLength: {TextLength}, TextPreview: {TextPreview}",
+                    tooLong.ChatId,
+                    index,
+                    tooLong.TextLength,
+                    tooLong.TextPreview);
+                throw tooLong;
+            }
         }
 
         return Ok();
+    }
+
+    private static IReadOnlyList<string> SplitMessage(string message)
+    {
+        if (message.Length <= MaxTelegramMessageLength)
+            return [message];
+
+        var chunks = new List<string>();
+        var current = new System.Text.StringBuilder();
+
+        foreach (var line in message.Split('\n'))
+        {
+            var lineWithBreak = line + "\n";
+            if (current.Length > 0 && current.Length + lineWithBreak.Length > MaxTelegramMessageLength)
+            {
+                chunks.Add(current.ToString());
+                current.Clear();
+            }
+
+            if (lineWithBreak.Length <= MaxTelegramMessageLength)
+            {
+                current.Append(lineWithBreak);
+                continue;
+            }
+
+            for (var index = 0; index < lineWithBreak.Length; index += MaxTelegramMessageLength)
+            {
+                var length = Math.Min(MaxTelegramMessageLength, lineWithBreak.Length - index);
+                chunks.Add(lineWithBreak.Substring(index, length));
+            }
+        }
+
+        if (current.Length > 0)
+            chunks.Add(current.ToString());
+
+        return chunks;
     }
 }
