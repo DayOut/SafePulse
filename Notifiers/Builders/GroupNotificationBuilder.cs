@@ -8,6 +8,7 @@ using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Models;
 using HeartPulse.Notifiers.Interfaces;
 using HeartPulse.Options;
+using HeartPulse.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using HeartPulse.Localization;
@@ -18,7 +19,8 @@ public class GroupNotificationBuilder(
     SafePulseContext db,
     ITelegramTextFormatter formatter,
     IOptions<AppOptions> appOptions,
-    IAppLocalizer localizer) : IGroupNotificationBuilder
+    IAppLocalizer localizer,
+    IWebPresenceTracker presenceTracker) : IGroupNotificationBuilder
 {
     private const int CompactGroupMemberThreshold = 20;
     private readonly AppOptions _appOptions = appOptions.Value;
@@ -62,7 +64,9 @@ public class GroupNotificationBuilder(
 
             foreach (var member in members)
             {
-                if (member.ChatId.HasValue && member.TelegramNotificationsEnabled != false)
+                if (member.ChatId.HasValue &&
+                    member.TelegramNotificationsEnabled != false &&
+                    !presenceTracker.IsOnline(member.Id))
                 {
                     var language = localizer.NormalizeLanguage(member.Language);
                     var text = members.Count > CompactGroupMemberThreshold

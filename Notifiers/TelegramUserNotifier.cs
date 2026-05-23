@@ -7,6 +7,9 @@ public class TelegramUserNotifier(IGroupNotifier groupNotifier) : IUserStatusCha
 {
     public Task HandleAsync(UserStatusChangedEvent userEvent, CancellationToken ct)
     {
+        if (userEvent.Source == UserStatusChangeSource.FakeSimulator)
+            return Task.CompletedTask;
+
         return groupNotifier.NotifyStatusChangedAsync(userEvent.User, ct);
     }
 }

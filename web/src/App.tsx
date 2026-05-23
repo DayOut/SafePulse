@@ -668,8 +668,29 @@ function OverviewStatusBlock({ label, status, value }: { label: string; status: 
     <section className={`overview-status-block ${status.toLowerCase()}`}>
       <span className={`status-tile ${status.toLowerCase()}`} />
       <span className="text-sm font-semibold text-neutral-300">{label}</span>
-      <strong>{value}</strong>
+      <AnimatedCounter value={value} />
     </section>
+  );
+}
+
+function AnimatedCounter({ value }: { value: number }) {
+  var digits = value.toString().split("");
+
+  return (
+    <strong className="animated-counter" aria-label={value.toString()}>
+      {digits.map((digit, index) => (
+        <span className="counter-digit-slot" key={`${index}-${digits.length}`}>
+          <span
+            aria-hidden="true"
+            className="counter-digit"
+            key={`${index}-${digit}-${value}`}
+            style={{ animationDelay: `${index * 35}ms` }}
+          >
+            {digit}
+          </span>
+        </span>
+      ))}
+    </strong>
   );
 }
 

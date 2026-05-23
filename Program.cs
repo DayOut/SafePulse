@@ -124,6 +124,7 @@ services.AddScoped<IGroupService, GroupService>();
 services.AddScoped<IAuthService, AuthService>();
 services.AddScoped<ITelegramLinkService, TelegramLinkService>();
 services.AddSingleton<IAppLocalizer, JsonAppLocalizer>();
+services.AddSingleton<IWebPresenceTracker, WebPresenceTracker>();
 services.AddScoped<IUserRepository, MongoUserRepository>();
 services.AddScoped<IGroupMembershipRepository, MongoGroupMembershipRepository>();
 services.AddScoped<IGroupStatusRequestRepository, MongoGroupStatusRequestRepository>();

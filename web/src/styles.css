@@ -374,6 +374,45 @@ input {
   line-height: 1;
 }
 
+.animated-counter {
+  display: inline-flex;
+  font-variant-numeric: tabular-nums;
+  min-height: 1em;
+  overflow: hidden;
+}
+
+.counter-digit-slot {
+  display: inline-block;
+  height: 1em;
+  overflow: hidden;
+  position: relative;
+  width: 0.62em;
+}
+
+.counter-digit {
+  animation: counter-digit-drop 240ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
+@keyframes counter-digit-drop {
+  from {
+    opacity: 0;
+    transform: translateY(-110%);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .counter-digit {
+    animation: none;
+  }
+}
+
 .overview-status-block.safe {
   border-color: rgb(22 101 52);
 }
