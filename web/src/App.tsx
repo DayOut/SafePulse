@@ -871,14 +871,14 @@ function GroupsPage({
   }
 
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "1fr", minWidth: 0 }}>
-      {/* Groups list panel */}
-      <div style={{ borderBottom: "1px solid var(--sp-border)" }}>
-        {/* Header */}
-        <div style={{ padding: "12px 16px", borderBottom: "1px solid var(--sp-border)", display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <div className="sp-section-head-label sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.12em" }}>
+    <div className="sp-groups-layout">
+      {/* ── Left rail: group list ──────────────────────────────────── */}
+      <div className="sp-groups-rail">
+        {/* Rail header */}
+        <div style={{ padding: "12px 14px", borderBottom: "1px solid var(--sp-border)", display: "flex", alignItems: "center", justifyContent: "space-between", background: "var(--sp-surface)", flex: "0 0 auto" }}>
+          <span className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>
             {groups.data?.length ?? 0} GROUPS
-          </div>
+          </span>
           <div style={{ display: "flex", gap: 6 }}>
             <button className="sp-btn-icon" onClick={() => setCreateModalOpen(true)} title="Create group" type="button">
               <Plus size={14} />
@@ -888,39 +888,39 @@ function GroupsPage({
             </button>
           </div>
         </div>
+        {/* Desktop search bar */}
+        <div className="sp-groups-rail-search sp-desktop-only">
+          <RefreshCw size={13} color="var(--sp-fg-3)" />
+          <span style={{ fontSize: 12, color: "var(--sp-fg-3)" }}>Search groups…</span>
+        </div>
         {createGroupMutation.error && (
-          <div className="sp-error-box" style={{ margin: "8px 16px" }}>{createGroupMutation.error.message}</div>
+          <div className="sp-error-box" style={{ margin: "8px" }}>{createGroupMutation.error.message}</div>
         )}
-        {/* Group list */}
-        <div className="sp-group-list">
+        {/* Group rows */}
+        <div>
           {(groups.data ?? []).map((group) => {
             const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
             for (const m of group.Members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
             const urgent = bd.NeedHelp > 0;
             const isSelected = group.Id === selectedGroup?.Id;
-
             return (
               <div
                 key={group.Id}
-                className={`sp-group-row ${urgent ? "sp-group-row--urgent" : ""}`}
-                style={isSelected ? { borderLeft: "2px solid var(--sp-fg)", background: "var(--sp-raised)" } : {}}
+                className={`sp-groups-rail-row ${isSelected ? "sp-groups-rail-row--selected" : ""} ${urgent ? "sp-groups-rail-row--urgent" : ""}`}
                 onClick={() => setSelectedGroupId(group.Id)}
               >
-                <div className="sp-group-row-top">
-                  <div className="sp-group-row-info">
-                    <span className="sp-callsign"
-                      style={urgent ? { borderColor: "var(--sp-help)", color: "var(--sp-help)" } : {}}>
-                      {groupCallsign(group.Name)}
-                    </span>
-                    <span className="sp-group-row-name">{group.Name}</span>
-                  </div>
-                  <span className="sp-group-row-count">{group.Members.length}</span>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <span className="sp-callsign" style={urgent ? { borderColor: "var(--sp-help)", color: "var(--sp-help)" } : {}}>
+                    {groupCallsign(group.Name)}
+                  </span>
+                  <span className="sp-mono sp-tab" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>{group.Members.length}</span>
                 </div>
-                <div className="sp-status-bar">
-                  {bd.NeedHelp  > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--help"    style={{ flex: bd.NeedHelp }} />}
-                  {bd.Unknown   > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--unknown"  style={{ flex: bd.Unknown }} />}
-                  {bd.InShelter > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--shelter"  style={{ flex: bd.InShelter }} />}
-                  {bd.Safe      > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--safe"     style={{ flex: bd.Safe }} />}
+                <span style={{ fontSize: 13, fontWeight: 600 }}>{group.Name}</span>
+                <div style={{ display: "flex", height: 3, background: "var(--sp-bg)", marginTop: 2 }}>
+                  {bd.NeedHelp  > 0 && <div style={{ flex: bd.NeedHelp,  background: "var(--sp-help)" }} />}
+                  {bd.Unknown   > 0 && <div style={{ flex: bd.Unknown,   background: "var(--sp-unknown)", opacity: 0.7 }} />}
+                  {bd.InShelter > 0 && <div style={{ flex: bd.InShelter, background: "var(--sp-shelter)" }} />}
+                  {bd.Safe      > 0 && <div style={{ flex: bd.Safe,      background: "var(--sp-safe)" }} />}
                 </div>
               </div>
             );
@@ -928,8 +928,8 @@ function GroupsPage({
         </div>
       </div>
 
-      {/* Selected group detail */}
-      <div>
+      {/* ── Center: selected group ─────────────────────────────────── */}
+      <div className="sp-groups-center">
         {selectedGroup ? (
           <GroupDetails
             group={selectedGroup}
@@ -951,9 +951,28 @@ function GroupsPage({
             memberActionError={addMemberMutation.error?.message ?? removeMemberMutation.error?.message ?? updateRoleMutation.error?.message}
           />
         ) : (
-          <div style={{ padding: "20px 16px" }}>
-            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>Create or select a group.</p>
+          <div style={{ padding: "20px 24px" }}>
+            <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>Select a group to view its members.</p>
           </div>
+        )}
+      </div>
+
+      {/* ── Right rail (desktop only) ──────────────────────────────── */}
+      <div className="sp-groups-right-rail">
+        {selectedGroup && (
+          <GroupRightRail
+            group={selectedGroup}
+            canManage={selectedGroup.OwnerId === currentUserId}
+            members={selectedGroup.Members}
+            inviteNote={inviteNote}
+            latestInvite={latestInvite}
+            isCreatingInvite={createInviteMutation.isPending}
+            createInviteError={createInviteMutation.error?.message}
+            onInviteNoteChange={setInviteNote}
+            onCreateInvite={() => createInviteMutation.mutate()}
+            onAddMember={(userId) => addMemberMutation.mutate(userId)}
+            onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
+          />
         )}
       </div>
 
@@ -961,15 +980,13 @@ function GroupsPage({
       {isCreateModalOpen && (
         <SpModal title="CREATE GROUP" onClose={() => setCreateModalOpen(false)}>
           <form style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={submitGroup}>
-            <SpField label="GROUP NAME" placeholder="New group name" value={groupName}
-              onChange={setGroupName} />
+            <SpField label="GROUP NAME" placeholder="New group name" value={groupName} onChange={setGroupName} />
             <button className="sp-btn-primary" disabled={createGroupMutation.isPending} type="submit">
               CREATE GROUP
             </button>
           </form>
         </SpModal>
       )}
-
       {isJoinModalOpen && (
         <SpModal title="JOIN GROUP" onClose={() => setJoinModalOpen(false)}>
           <JoinGroupForm
@@ -982,7 +999,6 @@ function GroupsPage({
           />
         </SpModal>
       )}
-
       {deleteTarget && (
         <DeleteGroupModal
           group={deleteTarget}
@@ -1062,100 +1078,131 @@ function GroupDetails({
             style={{ fontSize: 9, color: canManage ? "var(--sp-safe)" : "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
             {canManage ? "● OWNER" : "● MEMBER"}
           </span>
+          {/* Mobile: delete icon in header */}
           {onDeleteGroup && (
-            <button className="sp-btn-icon" style={{ marginLeft: "auto", color: "var(--sp-help)", borderColor: "var(--sp-help-dim)" }}
+            <button className="sp-btn-icon sp-mobile-only" style={{ marginLeft: "auto", color: "var(--sp-help)", borderColor: "var(--sp-help-dim)" }}
               onClick={onDeleteGroup} title="Delete group" type="button">
               <Trash2 size={14} />
             </button>
           )}
+          {/* Desktop: action buttons inline in header */}
+          <span className="sp-desktop-only" style={{ marginLeft: "auto", gap: 8 }}>
+            <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
+              <Send size={13} /> REQUEST STATUS
+            </button>
+            {canManage && (
+              <button className="sp-btn-icon" style={{ padding: "6px 10px" }}
+                onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite link" type="button">
+                + ADD MEMBER
+              </button>
+            )}
+          </span>
         </div>
 
         {/* Status bar */}
-        <div className="sp-status-bar">
+        <div className="sp-status-bar" style={{ height: 6, marginTop: 12 }}>
           {bd.NeedHelp  > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--help"    style={{ flex: bd.NeedHelp }} />}
           {bd.Unknown   > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--unknown"  style={{ flex: bd.Unknown }} />}
           {bd.InShelter > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--shelter"  style={{ flex: bd.InShelter }} />}
           {bd.Safe      > 0 && <div className="sp-status-bar-seg sp-status-bar-seg--safe"     style={{ flex: bd.Safe }} />}
         </div>
 
-        <div className="sp-group-breakdown">
-          {bd.NeedHelp  > 0 && <span style={{ color: "var(--sp-help)" }}>● {bd.NeedHelp} help</span>}
+        <div className="sp-group-breakdown" style={{ fontFamily: "var(--sp-mono)", fontSize: 11, marginTop: 8 }}>
+          {bd.NeedHelp  > 0 && <span style={{ color: "var(--sp-help)" }}>● {bd.NeedHelp} need help</span>}
           {bd.Unknown   > 0 && <span style={{ color: "var(--sp-unknown)" }}>● {bd.Unknown} unknown</span>}
           {bd.InShelter > 0 && <span style={{ color: "var(--sp-shelter)" }}>● {bd.InShelter} in shelter</span>}
           <span style={{ color: "var(--sp-safe)" }}>● {bd.Safe} safe</span>
-          <span style={{ color: "var(--sp-fg-3)" }}>{members.length} total</span>
+          <span style={{ marginLeft: "auto", color: "var(--sp-fg-3)" }}>{members.length} total</span>
         </div>
       </div>
 
-      {/* Action row */}
-      <div className="sp-action-row">
-        <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
-          <Send size={13} /> REQUEST STATUS
-        </button>
-        {canManage && (
-          <button className="sp-btn-icon" onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite" type="button">
-            <Copy size={14} />
+      {/* Mobile-only: action row + invite + add member */}
+      <div className="sp-mobile-only">
+        <div className="sp-action-row">
+          <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
+            <Send size={13} /> REQUEST STATUS
           </button>
-        )}
-      </div>
-
-      {/* Errors */}
-      {latestStatusRequest && (
-        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
-          <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
+          {canManage && (
+            <button className="sp-btn-icon" onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite" type="button">
+              <Copy size={14} />
+            </button>
+          )}
         </div>
-      )}
-      {requestStatusError && (
-        <div className="sp-error-box" style={{ margin: "8px 14px" }}>{requestStatusError}</div>
-      )}
-      {memberActionError && (
-        <div className="sp-error-box" style={{ margin: "8px 14px" }}>{memberActionError}</div>
-      )}
-
-      {/* Invite link */}
-      {latestInvite && (
-        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
-          <div className="sp-invite-box">
-            <div className="sp-invite-url">{latestInvite}</div>
-            <div className="sp-invite-actions">
-              <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
-                onClick={() => { void navigator.clipboard.writeText(latestInvite); }} type="button">
-                <Copy size={13} />
-                <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Copy</span>
+        {latestStatusRequest && (
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
+          </div>
+        )}
+        {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{requestStatusError}</div>}
+        {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{memberActionError}</div>}
+        {latestInvite && (
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+            <div className="sp-invite-box">
+              <div className="sp-invite-url">{latestInvite}</div>
+              <div className="sp-invite-actions">
+                <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
+                  onClick={() => { void navigator.clipboard.writeText(latestInvite); }} type="button">
+                  <Copy size={13} />
+                  <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Copy</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+        {canManage && (
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+            <div className="sp-input-row">
+              <input className="sp-text-input" placeholder="Invite note"
+                value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
+              <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
+                <Copy size={14} />
+              </button>
+            </div>
+            <div className="sp-input-row" style={{ marginTop: 8 }}>
+              <input className="sp-text-input" placeholder="User ID to add"
+                value={memberId} onChange={(e) => setMemberId(e.target.value)} />
+              <button className="sp-btn-icon" disabled={!memberId.trim()}
+                onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">
+                <Plus size={14} />
               </button>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Add member input (admin only) */}
-      {canManage && (
-        <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
-          <div className="sp-input-row">
-            <input className="sp-text-input" placeholder="Invite note"
-              value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
-            <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
-              <Copy size={14} />
-            </button>
+      {/* Desktop-only: inline error messages */}
+      <div className="sp-desktop-only" style={{ flexDirection: "column", gap: 0 }}>
+        {latestStatusRequest && (
+          <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--sp-border)" }}>
+            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
           </div>
-          <div className="sp-input-row" style={{ marginTop: 8 }}>
-            <input className="sp-text-input" placeholder="User ID to add"
-              value={memberId} onChange={(e) => setMemberId(e.target.value)} />
-            <button className="sp-btn-icon" disabled={!memberId.trim()}
-              onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">
-              <Plus size={14} />
-            </button>
-          </div>
-        </div>
-      )}
+        )}
+        {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 24px" }}>{requestStatusError}</div>}
+        {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 24px" }}>{memberActionError}</div>}
+      </div>
 
       {/* Filter chips */}
       <div className="sp-filter-chips">
-        <FilterChip label="ALL" count={members.length} active={statusFilter === "All"} onClick={() => setStatusFilter("All")} />
-        <FilterChip label="HELP"    count={bd.NeedHelp}  status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
-        <FilterChip label="SHLT"    count={bd.InShelter} status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
-        <FilterChip label="SAFE"    count={bd.Safe}      status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
-        <FilterChip label="UNK"     count={bd.Unknown}   status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
+        <FilterChip label="ALL"  count={members.length} active={statusFilter === "All"}       onClick={() => setStatusFilter("All")} />
+        <FilterChip label="HELP" count={bd.NeedHelp}    status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
+        <FilterChip label="SHLT" count={bd.InShelter}   status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
+        <FilterChip label="SAFE" count={bd.Safe}        status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
+        <FilterChip label="UNK"  count={bd.Unknown}     status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
+        {/* Desktop: search input on the right */}
+        <div className="sp-desktop-only" style={{ marginLeft: "auto", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--sp-surface)", border: "1px solid var(--sp-border)" }}>
+          <RefreshCw size={12} color="var(--sp-fg-3)" />
+          <span style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>Search members…</span>
+        </div>
+      </div>
+
+      {/* Desktop: member table header */}
+      <div className="sp-member-table-head">
+        <span />
+        <span>NAME</span>
+        <span>ROLE</span>
+        <span>STATUS</span>
+        <span>LAST ACTIVE</span>
+        <span>ACTIONS</span>
       </div>
 
       {/* Member list */}
@@ -1211,46 +1258,61 @@ function MemberRow({
   const key = statusKey(member.Status);
   const initials = userInitials(member.UserName || member.Id);
   const colorVar = `var(--sp-${key})`;
+  const urgent = member.Status === "NeedHelp";
+  const displayName = member.UserName || member.Id;
+
+  const actions = (
+    <div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}>
+      {onToggleAdmin && (
+        <button className="sp-btn-icon" style={{ width: 28, height: 28 }}
+          onClick={onToggleAdmin} title={member.Role === "Admin" ? "Make member" : "Make admin"} type="button">
+          <ShieldCheck size={13} />
+        </button>
+      )}
+      {onRemove && (
+        <button className="sp-btn-icon" style={{ width: 28, height: 28, borderColor: "var(--sp-help-dim)", color: "var(--sp-help)" }}
+          onClick={onRemove} title="Remove from group" type="button">
+          <Trash2 size={13} />
+        </button>
+      )}
+    </div>
+  );
 
   return (
-    <div className={`sp-member-row ${member.Status === "NeedHelp" ? "sp-member-row--urgent" : ""}`}>
-      {/* Avatar */}
-      <span
-        className="sp-avatar"
-        style={{ width: 36, height: 36, fontSize: 12, borderRadius: 0 }}
-      >
-        {initials}
-        <span
-          className="sp-avatar-indicator"
-          style={{ width: 10, height: 10, background: colorVar }}
-        />
-      </span>
-
-      <div className="sp-member-info">
-        <span className="sp-member-name">{member.UserName || member.Id}</span>
-        <div className="sp-member-meta">
-          <span>{member.Role || "Member"}</span>
-          <span>·</span>
-          <span>{formatDateTime(member.LastActiveAt)}</span>
+    <>
+      {/* Card (mobile) */}
+      <div className={`sp-member-row ${urgent ? "sp-member-row--urgent" : ""}`}>
+        <span className="sp-avatar" style={{ width: 36, height: 36, fontSize: 12, borderRadius: 0 }}>
+          {initials}
+          <span className="sp-avatar-indicator" style={{ width: 10, height: 10, background: colorVar }} />
+        </span>
+        <div className="sp-member-info">
+          <span className="sp-member-name">{displayName}</span>
+          <div className="sp-member-meta">
+            <span>{member.Role || "Member"}</span>
+            <span>·</span>
+            <span>{formatDateTime(member.LastActiveAt)}</span>
+          </div>
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+          <StatusChip status={member.Status} />
+          {actions}
         </div>
       </div>
 
-      <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+      {/* Table row (desktop) */}
+      <div className={`sp-member-table-row ${urgent ? "sp-member-table-row--urgent" : ""}`}>
+        <span className="sp-avatar" style={{ width: 28, height: 28, fontSize: 10, borderRadius: 0 }}>
+          {initials}
+          <span className="sp-avatar-indicator" style={{ width: 8, height: 8, background: colorVar }} />
+        </span>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>{displayName}</span>
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>{member.Role || "Member"}</span>
         <StatusChip status={member.Status} />
-        {onToggleAdmin && (
-          <button className="sp-btn-icon" style={{ width: 28, height: 28 }}
-            onClick={onToggleAdmin} title={member.Role === "Admin" ? "Make member" : "Make admin"} type="button">
-            <ShieldCheck size={13} />
-          </button>
-        )}
-        {onRemove && (
-          <button className="sp-btn-icon" style={{ width: 28, height: 28, borderColor: "var(--sp-help-dim)", color: "var(--sp-help)" }}
-            onClick={onRemove} title="Remove from group" type="button">
-            <Trash2 size={13} />
-          </button>
-        )}
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>{formatDateTime(member.LastActiveAt)}</span>
+        {actions}
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1261,6 +1323,156 @@ function StatusChip({ status }: { status: UserStatus }) {
       <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--sp-${key})` }} />
       {STATUS_SHORT[status]}
     </span>
+  );
+}
+
+// ── Group right rail (desktop only) ───────────────────────────────
+function GroupRightRail({
+  group, canManage, members, inviteNote, latestInvite, isCreatingInvite, createInviteError,
+  onInviteNoteChange, onCreateInvite, onAddMember, onDeleteGroup,
+}: {
+  group: MyGroupDto;
+  canManage: boolean;
+  members: GroupMemberDto[];
+  inviteNote: string;
+  latestInvite: string | null;
+  isCreatingInvite: boolean;
+  createInviteError?: string;
+  onInviteNoteChange: (v: string) => void;
+  onCreateInvite: () => void;
+  onAddMember: (userId: string) => void;
+  onDeleteGroup?: () => void;
+}) {
+  const [memberId, setMemberId] = useState("");
+  const admins = members.filter((m) => m.Role === "Admin" || m.Role === "Owner");
+
+  return (
+    <>
+      {/* GROUP INFO */}
+      <div>
+        <div className="sp-section-head" style={{ marginBottom: 10 }}>
+          <span className="sp-section-head-label">GROUP INFO</span>
+          <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+        </div>
+        <div className="sp-group-kv-block">
+          <div className="sp-group-kv">
+            <span className="sp-group-kv-k">CODE</span>
+            <span className="sp-group-kv-v">{groupCallsign(group.Name)}</span>
+          </div>
+          <div className="sp-group-kv">
+            <span className="sp-group-kv-k">MEMBERS</span>
+            <span className="sp-group-kv-v">{members.length}</span>
+          </div>
+          <div className="sp-group-kv">
+            <span className="sp-group-kv-k">ADMINS</span>
+            <span className="sp-group-kv-v">{admins.length}</span>
+          </div>
+          <div className="sp-group-kv">
+            <span className="sp-group-kv-k">ROLE</span>
+            <span className="sp-group-kv-v" style={{ color: canManage ? "var(--sp-safe)" : "var(--sp-fg-2)" }}>
+              {canManage ? "OWNER" : "MEMBER"}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* INVITE LINK */}
+      <div>
+        <div className="sp-section-head" style={{ marginBottom: 10 }}>
+          <span className="sp-section-head-label">INVITE LINK</span>
+          <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {latestInvite && (
+            <div className="sp-group-kv-block" style={{ gap: 8 }}>
+              <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-2)", wordBreak: "break-all", padding: "8px 10px", background: "var(--sp-bg)", border: "1px solid var(--sp-border)" }}>
+                {latestInvite}
+              </div>
+              <button
+                className="sp-btn-secondary"
+                style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}
+                onClick={() => { void navigator.clipboard.writeText(latestInvite); }}
+                type="button"
+              >
+                <Copy size={12} /> COPY LINK
+              </button>
+            </div>
+          )}
+          {canManage && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              <div className="sp-input-row">
+                <input className="sp-text-input" placeholder="Invite note (optional)"
+                  value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
+                <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
+                  <Copy size={14} />
+                </button>
+              </div>
+              {createInviteError && <div className="sp-error-box">{createInviteError}</div>}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ADMINS */}
+      {admins.length > 0 && (
+        <div>
+          <div className="sp-section-head" style={{ marginBottom: 10 }}>
+            <span className="sp-section-head-label">ADMINS</span>
+            <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {admins.map((m) => {
+              const sk = statusKey(m.Status);
+              const initials = userInitials(m.UserName || m.Id);
+              return (
+                <div key={m.Id} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span className="sp-avatar" style={{ width: 28, height: 28, fontSize: 10, borderRadius: 0, flexShrink: 0 }}>
+                    {initials}
+                    <span className="sp-avatar-indicator" style={{ width: 8, height: 8, background: `var(--sp-${sk})` }} />
+                  </span>
+                  <div style={{ display: "flex", flexDirection: "column", flex: 1, minWidth: 0 }}>
+                    <span style={{ fontSize: 12, fontWeight: 600 }}>{m.UserName || m.Id}</span>
+                    <span className="sp-mono sp-up" style={{ fontSize: 9, color: m.Role === "Owner" ? "var(--sp-safe)" : "var(--sp-fg-3)", letterSpacing: "0.1em" }}>
+                      {m.Role}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ADD MEMBER */}
+      {canManage && (
+        <div>
+          <div className="sp-section-head" style={{ marginBottom: 10 }}>
+            <span className="sp-section-head-label">ADD MEMBER</span>
+            <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+          </div>
+          <div className="sp-input-row">
+            <input className="sp-text-input" placeholder="User ID"
+              value={memberId} onChange={(e) => setMemberId(e.target.value)} />
+            <button className="sp-btn-icon" disabled={!memberId.trim()}
+              onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">
+              <Plus size={14} />
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* DANGER ZONE */}
+      {onDeleteGroup && (
+        <div style={{ marginTop: "auto", padding: 12, border: "1px solid var(--sp-help-dim)", background: "var(--sp-help-bg)" }}>
+          <div className="sp-section-head" style={{ marginBottom: 8 }}>
+            <span className="sp-section-head-label" style={{ color: "var(--sp-help)" }}>DANGER ZONE</span>
+          </div>
+          <button className="sp-btn-danger" style={{ width: "100%" }} onClick={onDeleteGroup} type="button">
+            Delete group
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
