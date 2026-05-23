@@ -10,6 +10,7 @@ services:
       - Mongo__ConnectionString=mongodb://mongo:27017
       - Mongo__Database=safepulse
       - Api__AdminKey=${API_ADMIN_KEY}
+      - App__PublicBaseUrl=${APP_PUBLIC_BASE_URL}
       - Auth__SigningKey=${AUTH_SIGNING_KEY}
       - Auth__BootstrapAdminTelegramIds__0=${BOOTSTRAP_ADMIN_TELEGRAM_ID}
       - Auth__BootstrapAdminEmails__0=${BOOTSTRAP_ADMIN_EMAIL}

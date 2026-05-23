@@ -53,6 +53,9 @@ Local development defaults:
   "Api": {
     "AdminKey": "dev-admin-key"
   },
+  "App": {
+    "PublicBaseUrl": "http://localhost:5002"
+  },
   "Auth": {
     "Issuer": "SafePulse",
     "Audience": "SafePulse.Web",
@@ -74,6 +77,7 @@ Docker environment variables:
 
 ```powershell
 $env:API_ADMIN_KEY = "dev-admin-key"
+$env:APP_PUBLIC_BASE_URL = "https://your-public-domain-or-ngrok-url"
 $env:AUTH_SIGNING_KEY = "replace-with-a-long-random-secret"
 $env:BOOTSTRAP_ADMIN_TELEGRAM_ID = "your-telegram-user-id"
 $env:BOOTSTRAP_ADMIN_EMAIL = "admin@example.com"
@@ -83,6 +87,8 @@ docker compose up -d --build
 ```
 
 When running inside Docker, the API uses `mongodb://mongo:27017`. When running with `dotnet run` on Windows/macOS, use `mongodb://localhost:27017`.
+
+`App:PublicBaseUrl` is the externally reachable web/backend URL used in Telegram messages. Set it to the same public URL that opens the hosted web UI, for example your ngrok URL or mini-server domain. Large Telegram group updates use this value to link users directly to the group page.
 
 ## Authentication
 
@@ -299,6 +305,7 @@ Start API and MongoDB through Docker:
 
 ```powershell
 $env:AUTH_SIGNING_KEY = "replace-with-a-long-random-secret"
+$env:APP_PUBLIC_BASE_URL = "https://your-public-domain-or-ngrok-url"
 $env:BOOTSTRAP_ADMIN_TELEGRAM_ID = "your-telegram-user-id"
 $env:BOOTSTRAP_ADMIN_EMAIL = "admin@example.com"
 docker compose up -d --build api
@@ -332,6 +339,12 @@ For ngrok, expose the backend port only:
 
 ```powershell
 ngrok http 5002
+```
+
+Then set `App:PublicBaseUrl` or `APP_PUBLIC_BASE_URL` to the HTTPS forwarding URL printed by ngrok, without a trailing slash:
+
+```powershell
+$env:APP_PUBLIC_BASE_URL = "https://abc123.ngrok-free.app"
 ```
 
 ## Web UI
