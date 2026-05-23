@@ -329,7 +329,7 @@ export default function App() {
       </header>
 
       {/* ── Page content ── */}
-      <div className="app-content" style={{ maxWidth: 1280, margin: "0 auto", padding: "0 0" }}>
+      <div className="app-content" style={{ maxWidth: activeTab === "groups" ? undefined : 1280, margin: "0 auto", padding: "0 0" }}>
         {activeTab === "overview" && (
           <OverviewPage
             groups={myGroups.data ?? []}
