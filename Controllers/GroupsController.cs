@@ -221,6 +221,36 @@ public class GroupsController(
         };
 
         await requests.InsertOneAsync(request, cancellationToken: ct);
+        var members = await groupService.GetGroupMembersAsync(group.Id, ct);
+        var resetUsers = new List<AppUser>();
+
+        foreach (var member in members.Where(member => member.User.Status == UserStatus.Safe))
+        {
+            var updated = await userService.UpdateStatusAsync(member.User.Id, UserStatus.Unknown, ct);
+            if (updated is not null)
+                resetUsers.Add(updated);
+        }
+
+        foreach (var resetUser in resetUsers)
+        {
+            await statusHub.Clients.Group(group.Id).SendAsync("statusChanged", new StatusChangedDto
+            {
+                UserId = resetUser.Id,
+                UserName = resetUser.UserName,
+                Status = resetUser.Status.ToString(),
+                LastActiveAt = resetUser.LastActiveAt,
+                LastSeenOnlineAt = resetUser.LastSeenOnlineAt ?? resetUser.LastActiveAt,
+                GroupIds = new[] { group.Id }
+            }, ct);
+        }
+
+        if (resetUsers.Count > 0)
+        {
+            logger.LogInformation(
+                "Reset {UserCount} safe users to Unknown after status update request in group {GroupId}",
+                resetUsers.Count,
+                group.Id);
+        }
 
         var dto = new GroupStatusRequestedDto
         {
@@ -234,7 +264,6 @@ public class GroupsController(
 
         await statusHub.Clients.Group(group.Id).SendAsync("groupStatusRequested", dto, ct);
 
-        var members = await groupService.GetGroupMembersAsync(group.Id, ct);
         var chatIds = members
             .Where(member => member.User.TelegramNotificationsEnabled != false)
             .Select(member => member.User.ChatId)
