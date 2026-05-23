@@ -14,6 +14,7 @@ public class TelegramLinkService(IMongoDatabase database) : ITelegramLinkService
     private readonly IMongoCollection<GroupUser> _groupUsers = database.GetCollection<GroupUser>("groupUsers");
     private readonly IMongoCollection<GroupInvite> _groupInvites = database.GetCollection<GroupInvite>("groupInvites");
     private readonly IMongoCollection<TelegramLinkCode> _codes = database.GetCollection<TelegramLinkCode>("telegramLinkCodes");
+    private readonly IMongoCollection<TelegramStatusMessage> _statusMessages = database.GetCollection<TelegramStatusMessage>("telegramStatusMessages");
 
     public async Task<TelegramLinkCodeDto> CreateCodeAsync(string userId, CancellationToken ct)
     {
@@ -81,6 +82,31 @@ public class TelegramLinkService(IMongoDatabase database) : ITelegramLinkService
             cancellationToken: ct);
 
         return webUser.UserName;
+    }
+
+    public async Task<AppUser?> DisconnectAsync(string userId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var user = await _users.Find(u => u.Id == userId && u.IsDeleted != true)
+            .FirstOrDefaultAsync(ct);
+        if (user is null)
+            return null;
+
+        if (user.ChatId.HasValue)
+            await _statusMessages.DeleteManyAsync(x => x.ChatId == user.ChatId.Value, ct);
+
+        return await _users.FindOneAndUpdateAsync(
+            u => u.Id == userId && u.IsDeleted != true,
+            Builders<AppUser>.Update
+                .Unset(u => u.ChatId)
+                .Unset(u => u.TelegramUserId)
+                .Unset(u => u.TelegramNotificationsEnabled)
+                .Set(u => u.UpdatedAt, now),
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
     }
 
     private async Task MergeTelegramUserIntoWebUserAsync(

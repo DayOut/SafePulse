@@ -33,6 +33,7 @@ import {
   createInvite,
   createTelegramLinkCode,
   deleteGroup,
+  disconnectTelegram,
   devLogin,
   getCurrentUser,
   getMyGroups,
@@ -1100,6 +1101,14 @@ function TelegramLinkPanel({
     onSuccess: (code) => setCodeId(code.Id),
   });
 
+  const disconnect = useMutation({
+    mutationFn: () => disconnectTelegram(settings, accessToken),
+    onSuccess: () => {
+      setCodeId(null);
+      void queryClient.invalidateQueries({ queryKey: ["current-user"] });
+    },
+  });
+
   const linkStatus = useQuery({
     queryKey: ["telegram-link-status", settings, accessToken, codeId],
     queryFn: () => getTelegramLinkStatus(settings, accessToken, codeId!),
@@ -1125,6 +1134,19 @@ function TelegramLinkPanel({
           Create link code
         </button>
       </div>
+      {currentUser.ChatId && (
+        <button
+          className="mb-3 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm font-semibold text-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+          disabled={disconnect.isPending}
+          onClick={() => {
+            if (window.confirm("Disconnect Telegram from this web account?"))
+              disconnect.mutate();
+          }}
+          type="button"
+        >
+          {disconnect.isPending ? "Disconnecting..." : "Disconnect Telegram"}
+        </button>
+      )}
       {createCode.data && (
         <div className="rounded-md border border-neutral-800 bg-neutral-950 p-3">
           <p className="text-xs text-neutral-500">Send this command to the bot</p>
@@ -1134,9 +1156,9 @@ function TelegramLinkPanel({
           {linkStatus.data?.IsExpired && !linkStatus.data.IsConsumed && <p className="mt-2 text-sm text-red-300">This code expired. Create a new one.</p>}
         </div>
       )}
-      {(createCode.error || linkStatus.error) && (
+      {(createCode.error || linkStatus.error || disconnect.error) && (
         <p className="mt-3 rounded-md border border-red-700 bg-red-950 px-3 py-2 text-sm text-red-100">
-          {createCode.error?.message ?? linkStatus.error?.message}
+          {createCode.error?.message ?? linkStatus.error?.message ?? disconnect.error?.message}
         </p>
       )}
     </section>

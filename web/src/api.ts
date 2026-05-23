@@ -201,6 +201,12 @@ export function getTelegramLinkStatus(settings: AppSettings, accessToken: string
   return request<TelegramLinkStatusDto>(settings, `/api/auth/telegram-link-codes/${encodeURIComponent(codeId)}`, accessToken);
 }
 
+export function disconnectTelegram(settings: AppSettings, accessToken: string) {
+  return request<UserDto>(settings, "/api/auth/telegram-link", accessToken, {
+    method: "DELETE",
+  });
+}
+
 export function updateStatus(settings: AppSettings, accessToken: string, userId: string, status: UserStatus) {
   return request<UserDto>(settings, `/api/users/${encodeURIComponent(userId)}/status`, accessToken, {
     method: "PATCH",

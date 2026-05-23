@@ -156,6 +156,18 @@ public class AuthController(
         return status is null ? NotFound() : Ok(status);
     }
 
+    [Authorize]
+    [HttpDelete("telegram-link")]
+    public async Task<ActionResult<UserDto>> DisconnectTelegram(CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var user = await telegramLinkService.DisconnectAsync(userId, ct);
+        return user is null ? NotFound() : Ok(ToDto(user));
+    }
+
     private void SetRefreshCookie(string refreshToken)
     {
         Response.Cookies.Append(RefreshCookieName, refreshToken, new CookieOptions
