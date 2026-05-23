@@ -18,6 +18,7 @@ export type UserDto = {
   UserName: string;
   ChatId: number | null;
   TelegramUserId: string | null;
+  Language: string;
   Status: UserStatus;
   LastActiveAt: string;
   LastSeenOnlineAt: string;
@@ -204,6 +205,13 @@ export function getTelegramLinkStatus(settings: AppSettings, accessToken: string
 export function disconnectTelegram(settings: AppSettings, accessToken: string) {
   return request<UserDto>(settings, "/api/auth/telegram-link", accessToken, {
     method: "DELETE",
+  });
+}
+
+export function updateLanguage(settings: AppSettings, accessToken: string, language: string) {
+  return request<UserDto>(settings, "/api/auth/me/language", accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ Language: language }),
   });
 }
 

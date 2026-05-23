@@ -7,7 +7,10 @@ public class TelegramUserNotifier(IGroupNotifier groupNotifier) : IUserStatusCha
 {
     public Task HandleAsync(UserStatusChangedEvent userEvent, CancellationToken ct)
     {
-        if (userEvent.Source == UserStatusChangeSource.FakeSimulator)
+        // StatusRequestReset floods N events when a group is reset; the status-request
+        // notification message already covers this, so skip individual Telegram updates.
+        if (userEvent.Source is UserStatusChangeSource.FakeSimulator
+                              or UserStatusChangeSource.StatusRequestReset)
             return Task.CompletedTask;
 
         return groupNotifier.NotifyStatusChangedAsync(userEvent.User, ct);

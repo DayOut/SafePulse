@@ -328,15 +328,18 @@ public class GroupsController(
         ApiUrl = $"{Request.Scheme}://{Request.Host}/api/invites/{invite.Token}"
     };
 
+    private static readonly SemaphoreSlim _telegramSemaphore = new(25, 25);
+
     private async Task NotifyTelegramStatusRequestAsync(
         IReadOnlyList<TelegramStatusRequestRecipient> recipients,
         string groupId,
         string groupName,
         string requesterName)
     {
-        foreach (var recipient in recipients)
+        await Task.WhenAll(recipients.Select(async recipient =>
         {
             var text = BuildStatusRequestText(groupId, groupName, requesterName, recipient.Language);
+            await _telegramSemaphore.WaitAsync();
             try
             {
                 await bot.SendMessage(
@@ -359,7 +362,11 @@ public class GroupsController(
             {
                 logger.LogWarning(ex, "Failed to send group status request notification to Telegram chat {ChatId}", recipient.ChatId);
             }
-        }
+            finally
+            {
+                _telegramSemaphore.Release();
+            }
+        }));
     }
 
     private async Task ProcessStatusRequestSideEffectsAsync(string groupId, string groupName, string requesterName)

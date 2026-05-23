@@ -23,7 +23,10 @@ public class SignalRUserNotifier(
             return;
         }
 
-        await statusHub.Clients.Groups(groupIds).SendAsync("statusChanged", new StatusChangedDto
+        var memberUserIds = await memberships.GetMemberUserIdsAsync(groupIds, ct);
+        var userChannels = memberUserIds.Select(id => $"user:{id}").ToList();
+
+        await statusHub.Clients.Groups(userChannels).SendAsync("statusChanged", new StatusChangedDto
         {
             UserId = user.Id,
             UserName = user.UserName,

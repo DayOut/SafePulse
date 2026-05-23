@@ -40,6 +40,8 @@ public class StatusHub(
         presenceTracker.Connected(userId, Context.ConnectionId);
         await userService.TouchLastSeenOnlineAsync(userId, Context.ConnectionAborted);
 
+        await Groups.AddToGroupAsync(Context.ConnectionId, $"user:{userId}", Context.ConnectionAborted);
+
         var groups = await groupService.GetUserGroupsAsync(userId, Context.ConnectionAborted);
         foreach (var group in groups)
             await Groups.AddToGroupAsync(Context.ConnectionId, group.Id, Context.ConnectionAborted);

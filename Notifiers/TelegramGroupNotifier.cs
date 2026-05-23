@@ -19,14 +19,28 @@ public class TelegramGroupNotifier(
     private const int MaxTelegramMessageLength = 3900;
     private readonly IMongoCollection<TelegramStatusMessage> _statusMessages = database.GetCollection<TelegramStatusMessage>("telegramStatusMessages");
 
+    private static readonly SemaphoreSlim _telegramSemaphore = new(25, 25);
+
     public async Task NotifyStatusChangedAsync(AppUser changedUser, CancellationToken ct)
     {
         var notifications = await builder.BuildStatusNotificationsAsync(changedUser, ct);
+        if (notifications.Count == 0)
+            return;
 
-        foreach (var notification in notifications)
+        await Task.WhenAll(notifications.Select(async notification =>
         {
-            await UpsertStatusMessagesAsync(notification.ChatId, notification.GroupId, notification.Language, SplitMessage(notification.Text), ct);
-        }
+            await _telegramSemaphore.WaitAsync(ct);
+            try
+            {
+                await UpsertStatusMessagesAsync(
+                    notification.ChatId, notification.GroupId,
+                    notification.Language, SplitMessage(notification.Text), ct);
+            }
+            finally
+            {
+                _telegramSemaphore.Release();
+            }
+        }));
     }
 
     public async Task SendMessageAsync(string message, AppUser user, CancellationToken ct)

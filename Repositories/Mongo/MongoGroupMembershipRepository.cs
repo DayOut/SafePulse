@@ -68,4 +68,25 @@ public class MongoGroupMembershipRepository(IMongoDatabase database) : IGroupMem
                     : roleByUserId.GetValueOrDefault(user.Id) ?? GroupUserRole.Member))
             .ToList();
     }
+
+    public async Task<IReadOnlyList<string>> GetMemberUserIdsAsync(IReadOnlyList<string> groupIds, CancellationToken ct)
+    {
+        if (groupIds.Count == 0)
+            return [];
+
+        var memberUserIds = await _groupUsers
+            .Find(gu => groupIds.Contains(gu.GroupId) && gu.IsDeleted != true)
+            .Project(gu => gu.UserId)
+            .ToListAsync(ct);
+
+        var ownerUserIds = await _groups
+            .Find(g => groupIds.Contains(g.Id) && g.IsDeleted != true)
+            .Project(g => g.OwnerId)
+            .ToListAsync(ct);
+
+        return memberUserIds
+            .Concat(ownerUserIds)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+    }
 }

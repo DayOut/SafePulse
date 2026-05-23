@@ -29,35 +29,56 @@ public class GroupNotificationBuilder(
         AppUser changedUser,
         CancellationToken ct)
     {
-        var result = new List<GroupStatusNotification>();
-
+        // 1 query: group IDs the changed user belongs to
         var groupIds = await db.GroupUsers
-            .Where(gu => gu.UserId == changedUser.Id)
+            .Where(gu => gu.UserId == changedUser.Id && gu.IsDeleted != true)
             .Select(gu => gu.GroupId)
             .Distinct()
             .ToListAsync(ct);
 
         if (groupIds.Count == 0)
-            return result;
+            return [];
 
-        foreach (var groupId in groupIds)
+        // 1 query: all groups at once
+        var groups = await db.Groups
+            .Where(g => groupIds.Contains(g.Id) && g.IsDeleted != true)
+            .ToListAsync(ct);
+
+        if (groups.Count == 0)
+            return [];
+
+        // 1 query: all membership links for all groups at once
+        var allLinks = await db.GroupUsers
+            .Where(gu => groupIds.Contains(gu.GroupId) && gu.IsDeleted != true)
+            .Select(gu => new { gu.GroupId, gu.UserId })
+            .ToListAsync(ct);
+
+        var memberIdsByGroup = allLinks
+            .GroupBy(x => x.GroupId)
+            .ToDictionary(g => g.Key, g => g.Select(x => x.UserId).Distinct().ToList());
+
+        var allMemberIds = allLinks.Select(x => x.UserId).Distinct().ToList();
+        if (allMemberIds.Count == 0)
+            return [];
+
+        // 1 query: all users at once
+        var allUsers = await db.Users
+            .Where(u => allMemberIds.Contains(u.Id) && u.IsDeleted != true)
+            .ToListAsync(ct);
+
+        var usersById = allUsers.ToDictionary(u => u.Id);
+
+        var result = new List<GroupStatusNotification>();
+
+        foreach (var group in groups)
         {
-            var group = await db.Groups
-                .FirstOrDefaultAsync(g => g.Id == groupId, ct);
-            if (group is null)
+            if (!memberIdsByGroup.TryGetValue(group.Id, out var memberIds) || memberIds.Count == 0)
                 continue;
 
-            var memberIds = await db.GroupUsers
-                .Where(gu => gu.GroupId == groupId)
-                .Select(gu => gu.UserId)
-                .ToListAsync(ct);
-
-            if (memberIds.Count == 0)
-                continue;
-
-            var members = await db.Users
-                .Where(u => memberIds.Contains(u.Id))
-                .ToListAsync(ct);
+            var members = memberIds
+                .Where(usersById.ContainsKey)
+                .Select(id => usersById[id])
+                .ToList();
 
             if (members.Count == 0)
                 continue;

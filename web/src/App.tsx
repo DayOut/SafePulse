@@ -46,6 +46,7 @@ import {
   requestGroupStatusUpdate,
   resolveInvite,
   updateGroupMemberRole,
+  updateLanguage,
   updateStatus,
 } from "./api";
 import { createStatusConnection } from "./signalr";
@@ -722,18 +723,12 @@ function OverviewPage({
             <span className="sp-group-kv-k">NETWORK</span>
             <span className="sp-group-kv-v">{total} PEOPLE</span>
           </div>
-          {totals.NeedHelp > 0 && (
-            <div className="sp-group-kv">
-              <span className="sp-group-kv-k">NEED HELP</span>
-              <span className="sp-group-kv-v" style={{ color: "var(--sp-help)" }}>{totals.NeedHelp}</span>
-            </div>
-          )}
         </div>
 
         {/* Request all status */}
         <button
           className="sp-btn-action"
-          style={{ border: "1px solid var(--sp-shelter-dim)", background: "var(--sp-shelter-bg)", color: "var(--sp-shelter)" }}
+          style={{ border: "1px solid var(--sp-shelter-dim)", background: "var(--sp-shelter-bg)", color: "var(--sp-shelter)", flex: "none" }}
           onClick={onRequestAllStatus}
           disabled={groups.length === 0}
           type="button"
@@ -758,12 +753,13 @@ function OverviewPage({
                 return (
                   <div key={i} style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                     <span className="sp-mono sp-tab" style={{ fontSize: 10, color: "var(--sp-fg-4)", paddingTop: 2, flexShrink: 0 }}>
-                      {new Date(e.LastActiveAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+                      {new Date(e.LastActiveAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false })}
                     </span>
                     <span style={{ width: 6, height: 6, borderRadius: "50%", background: `var(--sp-${ek})`, marginTop: 5, flexShrink: 0 }} />
                     <div style={{ display: "flex", flexDirection: "column", minWidth: 0 }}>
                       <span style={{ fontSize: 11, color: "var(--sp-fg)" }}>
-                        {e.UserName || e.UserId} → {STATUS_SHORT[e.Status]}
+                        {e.UserName || e.UserId} →{" "}
+                        <span style={{ color: `var(--sp-${ek})`, fontWeight: 600 }}>{STATUS_SHORT[e.Status]}</span>
                       </span>
                     </div>
                   </div>
@@ -874,6 +870,7 @@ function GroupsPage({
 }) {
   const queryClient = useQueryClient();
   const [groupName, setGroupName] = useState("");
+  const [groupSearch, setGroupSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
   const [inviteNote, setInviteNote] = useState("");
   const [latestInvite, setLatestInvite] = useState<string | null>(null);
@@ -977,17 +974,27 @@ function GroupsPage({
             </button>
           </div>
         </div>
-        {/* Desktop search bar */}
-        <div className="sp-groups-rail-search sp-desktop-only">
-          <RefreshCw size={13} color="var(--sp-fg-3)" />
-          <span style={{ fontSize: 12, color: "var(--sp-fg-3)" }}>Search groups…</span>
+        {/* Search bar */}
+        <div className="sp-groups-rail-search">
+          <input
+            className="sp-text-input"
+            style={{ flex: 1, height: 28, fontSize: 12, padding: "0 8px" }}
+            placeholder="Search groups…"
+            value={groupSearch}
+            onChange={(e) => setGroupSearch(e.target.value)}
+          />
+          {groupSearch && (
+            <button className="sp-btn-icon" style={{ padding: 4 }} onClick={() => setGroupSearch("")} type="button">
+              <X size={12} />
+            </button>
+          )}
         </div>
         {createGroupMutation.error && (
           <div className="sp-error-box" style={{ margin: "8px" }}>{createGroupMutation.error.message}</div>
         )}
         {/* Group rows */}
         <div>
-          {(groups.data ?? []).map((group) => {
+          {(groups.data ?? []).filter((g) => !groupSearch.trim() || g.Name.toLowerCase().includes(groupSearch.toLowerCase())).map((group) => {
             const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
             for (const m of group.Members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
             const urgent = bd.NeedHelp > 0;
@@ -1141,20 +1148,23 @@ function GroupDetails({
   memberActionError?: string;
 }) {
   const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
+  const [memberSearch, setMemberSearch] = useState("");
   const [memberId, setMemberId] = useState("");
 
   const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
   for (const m of members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
 
   const filteredMembers = useMemo(() => {
+    const q = memberSearch.trim().toLowerCase();
     return [...members]
       .filter((m) => statusFilter === "All" || m.Status === statusFilter)
+      .filter((m) => !q || m.UserName.toLowerCase().includes(q))
       .sort((a, b) => {
         const sc = statusFilter === "All" ? 0 : statusOrder(a.Status) - statusOrder(b.Status);
         if (sc !== 0) return sc;
         return new Date(b.LastActiveAt).getTime() - new Date(a.LastActiveAt).getTime();
       });
-  }, [members, statusFilter]);
+  }, [members, statusFilter, memberSearch]);
 
   return (
     <div>
@@ -1180,7 +1190,7 @@ function GroupDetails({
               <Send size={13} /> REQUEST STATUS
             </button>
             {canManage && (
-              <button className="sp-btn-icon" style={{ padding: "6px 10px" }}
+              <button className="sp-btn-icon" style={{ padding: "6px 10px", fontSize: 11, fontWeight: 700, letterSpacing: "0.08em" }}
                 onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite link" type="button">
                 + ADD MEMBER
               </button>
@@ -1247,14 +1257,14 @@ function GroupDetails({
                 <Copy size={14} />
               </button>
             </div>
-            <div className="sp-input-row" style={{ marginTop: 8 }}>
-              <input className="sp-text-input" placeholder="User ID to add"
-                value={memberId} onChange={(e) => setMemberId(e.target.value)} />
-              <button className="sp-btn-icon" disabled={!memberId.trim()}
-                onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">
-                <Plus size={14} />
-              </button>
-            </div>
+            {/*<div className="sp-input-row" style={{ marginTop: 8 }}>*/}
+            {/*  <input className="sp-text-input" placeholder="User ID to add"*/}
+            {/*    value={memberId} onChange={(e) => setMemberId(e.target.value)} />*/}
+            {/*  <button className="sp-btn-icon" disabled={!memberId.trim()}*/}
+            {/*    onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">*/}
+            {/*    <Plus size={14} />*/}
+            {/*  </button>*/}
+            {/*</div>*/}
           </div>
         )}
       </div>
@@ -1277,10 +1287,20 @@ function GroupDetails({
         <FilterChip label="SHLT" count={bd.InShelter}   status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
         <FilterChip label="SAFE" count={bd.Safe}        status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
         <FilterChip label="UNK"  count={bd.Unknown}     status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
-        {/* Desktop: search input on the right */}
-        <div className="sp-desktop-only" style={{ marginLeft: "auto", alignItems: "center", gap: 8, padding: "6px 10px", background: "var(--sp-surface)", border: "1px solid var(--sp-border)" }}>
-          <RefreshCw size={12} color="var(--sp-fg-3)" />
-          <span style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>Search members…</span>
+        {/* Search input */}
+        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+          <input
+            className="sp-text-input"
+            style={{ height: 28, fontSize: 11, padding: "0 8px", width: 160 }}
+            placeholder="Search members…"
+            value={memberSearch}
+            onChange={(e) => setMemberSearch(e.target.value)}
+          />
+          {memberSearch && (
+            <button className="sp-btn-icon" style={{ padding: 4 }} onClick={() => setMemberSearch("")} type="button">
+              <X size={12} />
+            </button>
+          )}
         </div>
       </div>
 
@@ -1581,8 +1601,14 @@ function SettingsPage({
   currentUser: UserDto;
   onSubmit: (e: FormEvent) => void;
 }) {
+  const queryClient = useQueryClient();
   const [activeSection, setActiveSection] = useState("profile");
   const sk = statusKey(currentUser.Status);
+
+  const setLanguage = useMutation({
+    mutationFn: (lang: string) => updateLanguage(settings, accessToken, lang),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["current-user"] }),
+  });
 
   const navItems = [
     { id: "profile",      label: "Profile",      icon: <ShieldCheck size={15} /> },
@@ -1650,6 +1676,46 @@ function SettingsPage({
           </div>
           <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginTop: 4 }}>
             {currentUser.UserName} · {currentUser.Id}
+          </div>
+        </div>
+
+        {/* Profile */}
+        <div className="sp-settings-section">
+          <div className="sp-settings-section-head">
+            <div className="sp-section-head">
+              <span className="sp-section-head-label">
+                <span className="sp-section-head-code">00</span>PROFILE
+              </span>
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)", display: "flex", flexDirection: "column", gap: 12 }}>
+            <div>
+              <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
+                INTERFACE LANGUAGE
+              </div>
+              <div style={{ display: "flex", gap: 6 }}>
+                {(["en", "uk"] as const).map((lang) => {
+                  const active = (currentUser.Language || "en") === lang;
+                  return (
+                    <button
+                      key={lang}
+                      type="button"
+                      className="sp-filter-chip"
+                      disabled={setLanguage.isPending}
+                      style={active ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" } : {}}
+                      onClick={() => { if (!active) setLanguage.mutate(lang); }}
+                    >
+                      {lang === "en" ? "English" : "Українська"}
+                    </button>
+                  );
+                })}
+              </div>
+              {setLanguage.isError && (
+                <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-help)", marginTop: 6 }}>
+                  {setLanguage.error instanceof Error ? setLanguage.error.message : "Failed to update language"}
+                </div>
+              )}
+            </div>
           </div>
         </div>
 
