@@ -1,8 +1,7 @@
-using HeartPulse.DTOs;
-using HeartPulse.Hubs;
+using HeartPulse.Events;
 using HeartPulse.Models;
 using HeartPulse.Options;
-using Microsoft.AspNetCore.SignalR;
+using HeartPulse.Services.Interfaces;
 using Microsoft.Extensions.Options;
 using MongoDB.Bson;
 using MongoDB.Driver;
@@ -11,7 +10,7 @@ namespace HeartPulse.Services;
 
 public class FakeStatusSimulatorHostedService(
     IMongoDatabase database,
-    IHubContext<StatusHub> statusHub,
+    IServiceScopeFactory scopeFactory,
     IOptions<FakeStatusSimulatorOptions> options,
     ILogger<FakeStatusSimulatorHostedService> logger) : BackgroundService
 {
@@ -83,7 +82,7 @@ public class FakeStatusSimulatorHostedService(
                 Builders<AppUser>.Update
                     .SetOnInsert(u => u.Id, userId)
                     .Set(u => u.UserName, userName)
-                    .Set(u => u.Status, status)
+                    .SetOnInsert(u => u.Status, status)
                     .Set(u => u.IsFake, true)
                     .Set(u => u.IsDeleted, false)
                     .Set(u => u.LastActiveAt, now)
@@ -126,35 +125,20 @@ public class FakeStatusSimulatorHostedService(
             .Take(count)
             .ToList();
 
+        await using var scope = scopeFactory.CreateAsyncScope();
+        var statusService = scope.ServiceProvider.GetRequiredService<IUserStatusService>();
+
         foreach (var userId in selectedUserIds)
         {
-            var now = DateTime.UtcNow;
             var status = PickStatus();
-            var updated = await _users.FindOneAndUpdateAsync(
-                u => u.Id == userId && u.IsFake == true && u.IsDeleted != true,
-                Builders<AppUser>.Update
-                    .Set(u => u.Status, status)
-                    .Set(u => u.LastActiveAt, now)
-                    .Set(u => u.LastSeenOnlineAt, now)
-                    .Set(u => u.UpdatedAt, now),
-                new FindOneAndUpdateOptions<AppUser>
-                {
-                    ReturnDocument = ReturnDocument.After
-                },
-                ct);
+            var user = await _users
+                .Find(u => u.Id == userId && u.IsFake == true && u.IsDeleted != true)
+                .FirstOrDefaultAsync(ct);
 
-            if (updated is null)
+            if (user is null)
                 continue;
 
-            await statusHub.Clients.Group(groupId).SendAsync("statusChanged", new StatusChangedDto
-            {
-                UserId = updated.Id,
-                UserName = updated.UserName,
-                Status = updated.Status.ToString(),
-                LastActiveAt = updated.LastActiveAt,
-                LastSeenOnlineAt = updated.LastSeenOnlineAt ?? updated.LastActiveAt,
-                GroupIds = new[] { groupId }
-            }, ct);
+            await statusService.ChangeStatusAsync(user.Id, status, UserStatusChangeSource.FakeSimulator, ct);
         }
     }
 

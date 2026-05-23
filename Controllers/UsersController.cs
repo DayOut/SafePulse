@@ -1,10 +1,9 @@
 using HeartPulse.DTOs;
-using HeartPulse.Hubs;
+using HeartPulse.Events;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.SignalR;
 
 namespace HeartPulse.Controllers;
 
@@ -13,9 +12,7 @@ namespace HeartPulse.Controllers;
 [Route("api/users")]
 public class UsersController(
     IUserService userService,
-    IGroupService groupService,
-    IHubContext<StatusHub> statusHub,
-    ILogger<UsersController> logger) : ControllerBase
+    IUserStatusService userStatusService) : ControllerBase
 {
     [HttpPost]
     [Authorize(Roles = "Admin")]
@@ -61,7 +58,10 @@ public class UsersController(
         if (!TryParseStatus(request.Status, out var status))
             return BadRequest("Status is invalid");
 
-        var user = await userService.UpdateAsync(userId, request.UserName, request.ChatId, status, ct);
+        var user = await userService.UpdateAsync(userId, request.UserName, request.ChatId, ct);
+        if (user is not null && status.HasValue)
+            user = await userStatusService.ChangeStatusAsync(userId, status.Value, UserStatusChangeSource.Web, ct);
+
         return user is null ? NotFound() : Ok(ToDto(user));
     }
 
@@ -78,29 +78,9 @@ public class UsersController(
         if (!TryParseStatus(request.Status, out var status) || status is null)
             return BadRequest("Status is invalid");
 
-        var user = await userService.UpdateStatusAsync(userId, status.Value, ct);
+        var user = await userStatusService.ChangeStatusAsync(userId, status.Value, UserStatusChangeSource.Web, ct);
         if (user is null)
             return NotFound();
-
-        var groupIds = await groupService.GetUserGroupIdsAsync(userId, ct);
-        var message = new StatusChangedDto
-        {
-            UserId = user.Id,
-            UserName = user.UserName,
-            Status = user.Status.ToString(),
-            LastActiveAt = user.LastActiveAt,
-            LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,
-            GroupIds = groupIds
-        };
-
-        if (groupIds.Count == 0)
-        {
-            logger.LogInformation("Status changed for user {UserId}, but no groups were found for realtime broadcast", userId);
-        }
-        else
-        {
-            await BroadcastStatusChangedAsync(statusHub, logger, groupIds, message, ct);
-        }
 
         return Ok(ToDto(user));
     }
@@ -140,27 +120,4 @@ public class UsersController(
         UpdatedAt = user.UpdatedAt ?? user.LastActiveAt
     };
 
-    private static async Task BroadcastStatusChangedAsync(
-        IHubContext<StatusHub> statusHub,
-        ILogger logger,
-        IReadOnlyList<string> groupIds,
-        StatusChangedDto message,
-        CancellationToken ct)
-    {
-        try
-        {
-            logger.LogInformation(
-                "Broadcasting statusChanged for user {UserId} with status {Status} to groups {GroupIds}",
-                message.UserId,
-                message.Status,
-                string.Join(", ", groupIds));
-
-            await statusHub.Clients.Groups(groupIds)
-                .SendAsync("statusChanged", message, ct);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Failed to broadcast status change for user {UserId}", message.UserId);
-        }
-    }
 }

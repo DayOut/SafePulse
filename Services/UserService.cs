@@ -1,13 +1,18 @@
 using HeartPulse.Data;
 using HeartPulse.Localization;
 using HeartPulse.Models;
+using HeartPulse.Repositories.Interfaces;
 using HeartPulse.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using MongoDB.Driver;
 
 namespace HeartPulse.Services;
 
-public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase, IAppLocalizer localizer) : IUserService
+public class UserService(
+    SafePulseContext db,
+    IMongoDatabase mongoDatabase,
+    IAppLocalizer localizer,
+    IUserRepository users) : IUserService
 {
     private readonly IMongoCollection<AppUser> _users = mongoDatabase.GetCollection<AppUser>("users");
 
@@ -89,12 +94,7 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase, IApp
 
     public async Task<AppUser?> GetByIdAsync(string userId, CancellationToken ct)
     {
-        var filter = Builders<AppUser>.Filter.And(
-            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
-            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
-
-        return await _users.Find(filter)
-            .FirstOrDefaultAsync(ct);
+        return await users.GetByIdAsync(userId, ct);
     }
 
     public async Task<AppUser> CreateAsync(string? id, string userName, long? chatId, UserStatus status, CancellationToken ct)
@@ -128,7 +128,7 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase, IApp
         return user;
     }
 
-    public async Task<AppUser?> UpdateAsync(string userId, string? userName, long? chatId, UserStatus? status, CancellationToken ct)
+    public async Task<AppUser?> UpdateAsync(string userId, string? userName, long? chatId, CancellationToken ct)
     {
         var user = await db.Users.FindAsync(new object?[] { userId }, ct);
         if (user is null || user.IsDeleted == true)
@@ -140,35 +140,9 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase, IApp
         if (chatId.HasValue)
             user.ChatId = chatId;
 
-        if (status.HasValue)
-            user.Status = status.Value;
-
         user.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
         return user;
-    }
-
-    public async Task<AppUser?> UpdateStatusAsync(string userId, UserStatus status, CancellationToken ct)
-    {
-        var now = DateTime.UtcNow;
-        var filter = Builders<AppUser>.Filter.And(
-            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
-            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
-
-        var update = Builders<AppUser>.Update
-            .Set(u => u.Status, status)
-            .Set(u => u.LastActiveAt, now)
-            .Set(u => u.LastSeenOnlineAt, now)
-            .Set(u => u.UpdatedAt, now);
-
-        return await _users.FindOneAndUpdateAsync(
-            filter,
-            update,
-            new FindOneAndUpdateOptions<AppUser>
-            {
-                ReturnDocument = ReturnDocument.After
-            },
-            ct);
     }
 
     public async Task<AppUser?> TouchLastSeenOnlineAsync(string userId, CancellationToken ct)
@@ -258,12 +232,4 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase, IApp
         return true;
     }
 
-    public async Task UpdateStatusAsync(AppUser user, UserStatus status, CancellationToken ct)
-    {
-        user.Status = status;
-        user.LastActiveAt = DateTime.UtcNow;
-        user.LastSeenOnlineAt = DateTime.UtcNow;
-        user.UpdatedAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
-    }
 }

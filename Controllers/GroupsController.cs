@@ -1,16 +1,17 @@
 using System.Net;
 using HeartPulse.DTOs;
+using HeartPulse.Events;
 using HeartPulse.Exceptions;
 using HeartPulse.Hubs;
 using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Options;
+using HeartPulse.Repositories.Interfaces;
 using HeartPulse.Services.Interfaces;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
-using MongoDB.Driver;
 using Telegram.Bot;
 using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types.Enums;
@@ -23,7 +24,7 @@ namespace HeartPulse.Controllers;
 public class GroupsController(
     IGroupService groupService,
     IUserService userService,
-    IMongoDatabase database,
+    IGroupStatusRequestRepository statusRequests,
     IHubContext<StatusHub> statusHub,
     ITelegramBotClient bot,
     IServiceScopeFactory scopeFactory,
@@ -205,10 +206,7 @@ public class GroupsController(
             return StatusCode(StatusCodes.Status403Forbidden);
 
         var now = DateTime.UtcNow;
-        var requests = database.GetCollection<GroupStatusRequest>("groupStatusRequests");
-        var latest = await requests.Find(r => r.GroupId == groupId)
-            .SortByDescending(r => r.CreatedAt)
-            .FirstOrDefaultAsync(ct);
+        var latest = await statusRequests.GetLatestForGroupAsync(groupId, ct);
 
         if (latest is not null && latest.CreatedAt > now.AddMinutes(-1))
         {
@@ -230,7 +228,7 @@ public class GroupsController(
             CreatedAt = now
         };
 
-        await requests.InsertOneAsync(request, cancellationToken: ct);
+        await statusRequests.InsertAsync(request, ct);
 
         var dto = new GroupStatusRequestedDto
         {
@@ -369,31 +367,21 @@ public class GroupsController(
         try
         {
             await using var scope = scopeFactory.CreateAsyncScope();
-            var scopedGroupService = scope.ServiceProvider.GetRequiredService<IGroupService>();
-            var scopedUserService = scope.ServiceProvider.GetRequiredService<IUserService>();
-            var scopedStatusHub = scope.ServiceProvider.GetRequiredService<IHubContext<StatusHub>>();
+            var scopedMemberships = scope.ServiceProvider.GetRequiredService<IGroupMembershipRepository>();
+            var scopedStatusService = scope.ServiceProvider.GetRequiredService<IUserStatusService>();
 
-            var members = await scopedGroupService.GetGroupMembersAsync(groupId, CancellationToken.None);
+            var members = await scopedMemberships.GetGroupMembersAsync(groupId, CancellationToken.None);
             var resetUsers = new List<AppUser>();
 
             foreach (var member in members.Where(member => member.User.Status == UserStatus.Safe))
             {
-                var updated = await scopedUserService.UpdateStatusAsync(member.User.Id, UserStatus.Unknown, CancellationToken.None);
+                var updated = await scopedStatusService.ChangeStatusAsync(
+                    member.User.Id,
+                    UserStatus.Unknown,
+                    UserStatusChangeSource.StatusRequestReset,
+                    CancellationToken.None);
                 if (updated is not null)
                     resetUsers.Add(updated);
-            }
-
-            foreach (var resetUser in resetUsers)
-            {
-                await scopedStatusHub.Clients.Group(groupId).SendAsync("statusChanged", new StatusChangedDto
-                {
-                    UserId = resetUser.Id,
-                    UserName = resetUser.UserName,
-                    Status = resetUser.Status.ToString(),
-                    LastActiveAt = resetUser.LastActiveAt,
-                    LastSeenOnlineAt = resetUser.LastSeenOnlineAt ?? resetUser.LastActiveAt,
-                    GroupIds = new[] { groupId }
-                }, CancellationToken.None);
             }
 
             if (resetUsers.Count > 0)

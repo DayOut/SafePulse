@@ -1,6 +1,7 @@
 using HeartPulse.Commands;
 using HeartPulse.Commands.Handlers;
 using HeartPulse.Commands.Interfaces;
+using HeartPulse.Events;
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.EntityFrameworkCore;
@@ -14,6 +15,8 @@ using HeartPulse.Notifiers;
 using HeartPulse.Notifiers.Builders;
 using HeartPulse.Notifiers.Interfaces;
 using HeartPulse.Options;
+using HeartPulse.Repositories.Interfaces;
+using HeartPulse.Repositories.Mongo;
 using HeartPulse.Services;
 using HeartPulse.Services.Interfaces;
 using MongoDB.Driver;
@@ -116,13 +119,20 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 
 var services = builder.Services;
 services.AddScoped<IUserService, UserService>();
+services.AddScoped<IUserStatusService, UserStatusService>();
 services.AddScoped<IGroupService, GroupService>();
 services.AddScoped<IAuthService, AuthService>();
 services.AddScoped<ITelegramLinkService, TelegramLinkService>();
-services.AddScoped<TelegramStatusUpdateService>();
 services.AddSingleton<IAppLocalizer, JsonAppLocalizer>();
+services.AddScoped<IUserRepository, MongoUserRepository>();
+services.AddScoped<IGroupMembershipRepository, MongoGroupMembershipRepository>();
+services.AddScoped<IGroupStatusRequestRepository, MongoGroupStatusRequestRepository>();
+services.AddSingleton<IUserEventQueue, UserEventQueue>();
+services.AddHostedService<UserEventWorker>();
 services.AddScoped<IGroupNotificationBuilder, GroupNotificationBuilder>();
 services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();
+services.AddScoped<IUserStatusChangedEventHandler, SignalRUserNotifier>();
+services.AddScoped<IUserStatusChangedEventHandler, TelegramUserNotifier>();
 services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
 services.AddScoped<ITelegramCommandDispatcher, TelegramCommandDispatcher>();
 services.AddHostedService<FakeStatusSimulatorHostedService>();

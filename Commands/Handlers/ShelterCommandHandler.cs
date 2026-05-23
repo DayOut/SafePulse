@@ -1,13 +1,14 @@
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
+using HeartPulse.Events;
 using HeartPulse.Localization;
 using HeartPulse.Models;
-using HeartPulse.Services;
+using HeartPulse.Services.Interfaces;
 
 namespace HeartPulse.Commands.Handlers;
 
 public class ShelterCommandHandler(
-    TelegramStatusUpdateService statusUpdateService,
+    IUserStatusService userStatusService,
     IAppLocalizer localizer)
     : ITelegramCommandHandler
 {
@@ -20,7 +21,7 @@ public class ShelterCommandHandler(
         TelegramCommandContext context,
         CancellationToken ct)
     {
-        var user = await statusUpdateService.UpdateAsync(context.User, UserStatus.InShelter, ct);
+        var user = await userStatusService.ChangeStatusAsync(context.User.Id, UserStatus.InShelter, UserStatusChangeSource.Telegram, ct);
 
         return new TelegramCommandResult(localizer.Text("telegram.shelterSet", user?.Language ?? context.User.Language));
     }

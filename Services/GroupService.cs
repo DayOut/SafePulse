@@ -1,5 +1,6 @@
 using HeartPulse.Data;
 using HeartPulse.Models;
+using HeartPulse.Repositories.Interfaces;
 using HeartPulse.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
 using MongoDB.Driver;
@@ -7,7 +8,10 @@ using System.Security.Cryptography;
 
 namespace HeartPulse.Services;
 
-public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : IGroupService
+public class GroupService(
+    SafePulseContext db,
+    IMongoDatabase mongoDatabase,
+    IGroupMembershipRepository memberships) : IGroupService
 {
     private readonly IMongoCollection<Group> _groups = mongoDatabase.GetCollection<Group>("groups");
     private readonly IMongoCollection<GroupUser> _groupUsers = mongoDatabase.GetCollection<GroupUser>("groupUsers");
@@ -30,22 +34,7 @@ public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : I
 
     public async Task<IReadOnlyList<string>> GetUserGroupIdsAsync(string userId, CancellationToken ct)
     {
-        var filter = Builders<GroupUser>.Filter.And(
-            Builders<GroupUser>.Filter.Eq(gu => gu.UserId, userId),
-            Builders<GroupUser>.Filter.Ne(gu => gu.IsDeleted, true));
-
-        var memberGroupIds = await _groupUsers.Find(filter)
-            .Project(gu => gu.GroupId)
-            .ToListAsync(ct);
-
-        var ownedGroupIds = await _groups.Find(g => g.OwnerId == userId && g.IsDeleted != true)
-            .Project(g => g.Id)
-            .ToListAsync(ct);
-
-        return memberGroupIds
-            .Concat(ownedGroupIds)
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
+        return await memberships.GetUserGroupIdsAsync(userId, ct);
     }
 
     public async Task<IReadOnlyList<Group>> GetOwnedGroupsAsync(string ownerId, CancellationToken ct)
@@ -70,36 +59,7 @@ public class GroupService(SafePulseContext db, IMongoDatabase mongoDatabase) : I
 
     public async Task<IReadOnlyList<GroupMemberInfo>> GetGroupMembersAsync(string groupId, CancellationToken ct)
     {
-        var group = await GetByIdAsync(groupId, ct);
-        if (group is null)
-            return Array.Empty<GroupMemberInfo>();
-
-        var memberships = await db.GroupUsers
-            .Where(gu => gu.GroupId == groupId && gu.IsDeleted != true)
-            .ToListAsync(ct);
-
-        var userIds = memberships.Select(gu => gu.UserId).Distinct().ToList();
-        if (!userIds.Contains(group.OwnerId))
-            userIds.Add(group.OwnerId);
-
-        if (userIds.Count == 0)
-            return Array.Empty<GroupMemberInfo>();
-
-        var users = await db.Users
-            .Where(u => userIds.Contains(u.Id) && u.IsDeleted != true)
-            .OrderByDescending(u => u.LastActiveAt)
-            .ToListAsync(ct);
-
-        var roleByUserId = memberships
-            .GroupBy(gu => gu.UserId)
-            .ToDictionary(grouping => grouping.Key, grouping => grouping.First().Role ?? GroupUserRole.Member);
-        return users
-            .Select(user => new GroupMemberInfo(
-                user,
-                user.Id == group.OwnerId
-                    ? "Owner"
-                    : roleByUserId.GetValueOrDefault(user.Id, GroupUserRole.Member)))
-            .ToList();
+        return await memberships.GetGroupMembersAsync(groupId, ct);
     }
 
     public async Task<bool> IsUserInGroupAsync(string groupId, string userId, CancellationToken ct)

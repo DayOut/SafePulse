@@ -1,13 +1,14 @@
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
+using HeartPulse.Events;
 using HeartPulse.Localization;
 using HeartPulse.Models;
-using HeartPulse.Services;
+using HeartPulse.Services.Interfaces;
 
 namespace HeartPulse.Commands.Handlers;
 
 public class SafeCommandHandler(
-    TelegramStatusUpdateService statusUpdateService,
+    IUserStatusService userStatusService,
     IAppLocalizer localizer)
     : ITelegramCommandHandler
 {
@@ -20,7 +21,7 @@ public class SafeCommandHandler(
         TelegramCommandContext context,
         CancellationToken ct)
     {
-        var user = await statusUpdateService.UpdateAsync(context.User, UserStatus.Safe, ct);
+        var user = await userStatusService.ChangeStatusAsync(context.User.Id, UserStatus.Safe, UserStatusChangeSource.Telegram, ct);
 
         return new TelegramCommandResult(localizer.Text("telegram.safeSet", user?.Language ?? context.User.Language));
     }

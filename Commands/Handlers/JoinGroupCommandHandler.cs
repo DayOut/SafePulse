@@ -1,13 +1,10 @@
-using System.Text;
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
 using HeartPulse.Services.Interfaces;
 
 namespace HeartPulse.Commands.Handlers;
 
-public class JoinGroupCommandHandler(
-    IUserService userService,
-    IGroupService groupService)
+public class JoinGroupCommandHandler(IGroupService groupService)
     : ITelegramCommandHandler
 {
     public bool CanHandle(TelegramCommandContext context)
@@ -20,7 +17,6 @@ public class JoinGroupCommandHandler(
         CancellationToken ct)
     {
         var parts = context.RawText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var sb = new StringBuilder();
         if (parts.Length < 2)
         {
             return new TelegramCommandResult("Будь ласка, надішли команду у форматі: /join ID_групи");
