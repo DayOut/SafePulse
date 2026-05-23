@@ -47,6 +47,7 @@ public class AuthService(
             Email = email.Trim(),
             NormalizedEmail = normalizedEmail,
             PasswordHash = HashPassword(password),
+            Language = "en",
             Status = UserStatus.Unknown,
             LastActiveAt = now,
             LastSeenOnlineAt = now,
@@ -160,12 +161,15 @@ public class AuthService(
             {
                 Id = userId,
                 CreatedAt = now,
-                Status = UserStatus.Unknown
+                Status = UserStatus.Unknown,
+                Language = chatId.HasValue ? "uk" : "en"
             };
             await db.Users.AddAsync(user, ct);
         }
 
         user.UserName = string.IsNullOrWhiteSpace(userName) ? userId : userName;
+        if (string.IsNullOrWhiteSpace(user.Language))
+            user.Language = chatId.HasValue ? "uk" : "en";
         user.ChatId = chatId ?? user.ChatId;
         if (user.LastActiveAt == default)
             user.LastActiveAt = now;

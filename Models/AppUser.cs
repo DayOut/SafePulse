@@ -13,6 +13,7 @@ public class AppUser
     public string? NormalizedEmail { get; set; }
     public string? PasswordHash { get; set; }
     public string? TelegramUserId { get; set; }
+    public string? Language { get; set; }
 
     public DateTime LastActiveAt { get; set; } = DateTime.UtcNow;
     public DateTime? LastSeenOnlineAt { get; set; }

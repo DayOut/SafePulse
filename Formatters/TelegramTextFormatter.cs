@@ -1,25 +1,23 @@
 using HeartPulse.Controllers;
 using HeartPulse.Formatters.Interfaces;
+using HeartPulse.Localization;
 using HeartPulse.Models;
 
 namespace HeartPulse.Formatters;
 
-public class TelegramTextFormatter: ITelegramTextFormatter
+public class TelegramTextFormatter(IAppLocalizer localizer): ITelegramTextFormatter
 {
-    public string FormatStatus(UserStatus status)
+    public string FormatStatus(UserStatus status, string? language = null)
     {
-        switch (status)
+        var key = status switch
         {
-            case UserStatus.Safe:
-                return "В безпеці";
-            case UserStatus.InShelter:
-                return "В укритті";
-            case UserStatus.NeedHelp:
-                return "Потребую допомоги";
-            case UserStatus.Unknown:
-                return "Невідомо";
-        }
-        throw new ArgumentOutOfRangeException(nameof(status));
+            UserStatus.Safe => "status.safe",
+            UserStatus.InShelter => "status.inShelter",
+            UserStatus.NeedHelp => "status.needHelp",
+            UserStatus.Unknown => "status.unknown",
+            _ => throw new ArgumentOutOfRangeException(nameof(status))
+        };
+        return localizer.Text(key, language);
     }
 
     public string FormatGroupLink(Group group)

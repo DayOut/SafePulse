@@ -13,6 +13,7 @@ public interface IUserService
     Task<AppUser?> UpdateStatusAsync(string userId, UserStatus status, CancellationToken ct);
     Task<AppUser?> TouchLastSeenOnlineAsync(string userId, CancellationToken ct);
     Task<AppUser?> SetTelegramNotificationsAsync(string userId, bool enabled, CancellationToken ct);
+    Task<AppUser?> SetLanguageAsync(string userId, string language, CancellationToken ct);
     Task<bool> SoftDeleteAsync(string userId, CancellationToken ct);
     Task UpdateStatusAsync(AppUser user, UserStatus status, CancellationToken ct);
 }

@@ -10,13 +10,15 @@ using HeartPulse.Notifiers.Interfaces;
 using HeartPulse.Options;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
+using HeartPulse.Localization;
 
 namespace HeartPulse.Notifiers.Builders;
 
 public class GroupNotificationBuilder(
     SafePulseContext db,
     ITelegramTextFormatter formatter,
-    IOptions<AppOptions> appOptions) : IGroupNotificationBuilder
+    IOptions<AppOptions> appOptions,
+    IAppLocalizer localizer) : IGroupNotificationBuilder
 {
     private const int CompactGroupMemberThreshold = 20;
     private readonly AppOptions _appOptions = appOptions.Value;
@@ -58,15 +60,15 @@ public class GroupNotificationBuilder(
             if (members.Count == 0)
                 continue;
 
-            var text = members.Count > CompactGroupMemberThreshold
-                ? BuildCompactStatusText(group, members)
-                : BuildFullStatusText(group, members, changedUser.Id);
-
             foreach (var member in members)
             {
                 if (member.ChatId.HasValue && member.TelegramNotificationsEnabled != false)
                 {
-                    result.Add(new GroupStatusNotification(member.ChatId.Value, group.Id, text));
+                    var language = localizer.NormalizeLanguage(member.Language);
+                    var text = members.Count > CompactGroupMemberThreshold
+                        ? BuildCompactStatusText(group, members, language)
+                        : BuildFullStatusText(group, members, changedUser.Id, language);
+                    result.Add(new GroupStatusNotification(member.ChatId.Value, group.Id, text, language));
                 }
             }
         }
@@ -74,13 +76,13 @@ public class GroupNotificationBuilder(
         return result;
     }
 
-    private string BuildFullStatusText(Group group, IReadOnlyList<AppUser> members, string changedUserId)
+    private string BuildFullStatusText(Group group, IReadOnlyList<AppUser> members, string changedUserId, string language)
     {
         var safeGroupName = WebUtility.HtmlEncode(group.Name);
         var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
 
         var sb = new StringBuilder();
-        sb.AppendLine($"<b>Оновлення статусів у групі</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
+        sb.AppendLine($"<b>{localizer.Text("telegram.fullStatusTitle", language)}</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
         sb.AppendLine();
 
         foreach (var member in members)
@@ -89,15 +91,15 @@ public class GroupNotificationBuilder(
             var time = member.LastActiveAt.ToHumanTime();
 
             if (changedUserId == member.Id)
-                sb.AppendLine($"- <b><u>{userName}: {formatter.FormatStatus(member.Status)} ({time})</u></b>");
+                sb.AppendLine($"- <b><u>{userName}: {formatter.FormatStatus(member.Status, language)} ({time})</u></b>");
             else
-                sb.AppendLine($"- {userName}: {formatter.FormatStatus(member.Status)} ({time})");
+                sb.AppendLine($"- {userName}: {formatter.FormatStatus(member.Status, language)} ({time})");
         }
 
         return sb.ToString();
     }
 
-    private string BuildCompactStatusText(Group group, IReadOnlyList<AppUser> members)
+    private string BuildCompactStatusText(Group group, IReadOnlyList<AppUser> members, string language)
     {
         var safeGroupName = WebUtility.HtmlEncode(group.Name);
         var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
@@ -107,17 +109,17 @@ public class GroupNotificationBuilder(
             .ToList();
 
         var sb = new StringBuilder();
-        sb.AppendLine($"<b>Оновлення статусів у великій групі</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
-        sb.AppendLine($"У групі {members.Count} учасників. Повний список дивись у web UI.");
+        sb.AppendLine($"<b>{localizer.Text("telegram.largeStatusTitle", language)}</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
+        sb.AppendLine(localizer.Text("telegram.largeStatusSummary", language, members.Count));
         sb.AppendLine();
 
         if (needHelpMembers.Count == 0)
         {
-            sb.AppendLine("Зараз немає учасників зі статусом \"Потребую допомоги\".");
+            sb.AppendLine(localizer.Text("telegram.noNeedHelp", language));
             return sb.ToString();
         }
 
-        sb.AppendLine($"<b>Потребують допомоги: {needHelpMembers.Count}</b>");
+        sb.AppendLine($"<b>{localizer.Text("telegram.needHelpCount", language, needHelpMembers.Count)}</b>");
         foreach (var member in needHelpMembers)
         {
             var userName = WebUtility.HtmlEncode(member.UserName ?? member.Id);

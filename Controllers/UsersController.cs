@@ -125,6 +125,8 @@ public class UsersController(
         Id = user.Id,
         UserName = user.UserName,
         ChatId = user.ChatId,
+        TelegramUserId = user.TelegramUserId,
+        Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : user.Language,
         Status = user.Status.ToString(),
         LastActiveAt = user.LastActiveAt,
         LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,

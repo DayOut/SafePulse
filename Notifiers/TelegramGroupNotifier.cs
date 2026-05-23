@@ -1,4 +1,5 @@
 using HeartPulse.Controllers;
+using HeartPulse.Exceptions;
 using HeartPulse.Models;
 using HeartPulse.Notifiers.Interfaces;
 using Telegram.Bot;
@@ -11,7 +12,8 @@ namespace HeartPulse.Notifiers;
 public class TelegramGroupNotifier(
     ITelegramBotClient bot,
     IGroupNotificationBuilder builder,
-    IMongoDatabase database)
+    IMongoDatabase database,
+    ILogger<TelegramGroupNotifier> logger)
     : IGroupNotifier
 {
     private const int MaxTelegramMessageLength = 3900;
@@ -23,7 +25,7 @@ public class TelegramGroupNotifier(
 
         foreach (var notification in notifications)
         {
-            await UpsertStatusMessagesAsync(notification.ChatId, notification.GroupId, SplitMessage(notification.Text), ct);
+            await UpsertStatusMessagesAsync(notification.ChatId, notification.GroupId, notification.Language, SplitMessage(notification.Text), ct);
         }
     }
 
@@ -31,16 +33,15 @@ public class TelegramGroupNotifier(
     {
         foreach (var chunk in SplitMessage(message))
         {
-            await bot.SendMessage(
-                user.ChatId,
+            await SendMessageWithTooLongLoggingAsync(
+                user.ChatId.GetValueOrDefault(),
                 chunk,
-                parseMode: ParseMode.Html,
-                replyMarkup: TelegramController.StatusKeyboard,
-                cancellationToken: ct);
+                TelegramController.StatusKeyboard,
+                ct);
         }
     }
 
-    private async Task UpsertStatusMessagesAsync(long chatId, string groupId, IReadOnlyList<string> chunks, CancellationToken ct)
+    private async Task UpsertStatusMessagesAsync(long chatId, string groupId, string language, IReadOnlyList<string> chunks, CancellationToken ct)
     {
         var existing = await _statusMessages
             .Find(x => x.ChatId == chatId && x.GroupId == groupId)
@@ -63,12 +64,11 @@ public class TelegramGroupNotifier(
                 }
             }
 
-            var sent = await bot.SendMessage(
+            var sent = await SendMessageWithTooLongLoggingAsync(
                 chatId,
                 chunk,
-                parseMode: ParseMode.Html,
-                replyMarkup: TelegramController.StatusKeyboard,
-                cancellationToken: ct);
+                TelegramController.BuildStatusKeyboard(language),
+                ct);
 
             var record = new TelegramStatusMessage
             {
@@ -111,9 +111,49 @@ public class TelegramGroupNotifier(
         {
             return true;
         }
+        catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
+        {
+            var tooLong = new TelegramMessageTooLongException(chatId, text, ex);
+            logger.LogError(
+                tooLong,
+                "Telegram edit message is too long. ChatId: {ChatId}, MessageId: {MessageId}, TextLength: {TextLength}, TextPreview: {TextPreview}",
+                chatId,
+                messageId,
+                tooLong.TextLength,
+                tooLong.TextPreview);
+            throw tooLong;
+        }
         catch (ApiRequestException)
         {
             return false;
+        }
+    }
+
+    private async Task<Telegram.Bot.Types.Message> SendMessageWithTooLongLoggingAsync(
+        long chatId,
+        string text,
+        Telegram.Bot.Types.ReplyMarkups.ReplyMarkup? replyMarkup,
+        CancellationToken ct)
+    {
+        try
+        {
+            return await bot.SendMessage(
+                chatId,
+                text,
+                parseMode: ParseMode.Html,
+                replyMarkup: replyMarkup,
+                cancellationToken: ct);
+        }
+        catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
+        {
+            var tooLong = new TelegramMessageTooLongException(chatId, text, ex);
+            logger.LogError(
+                tooLong,
+                "Telegram message is too long. ChatId: {ChatId}, TextLength: {TextLength}, TextPreview: {TextPreview}",
+                tooLong.ChatId,
+                tooLong.TextLength,
+                tooLong.TextPreview);
+            throw tooLong;
         }
     }
 

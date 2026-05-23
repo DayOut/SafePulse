@@ -1,4 +1,5 @@
 using HeartPulse.Data;
+using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -6,7 +7,7 @@ using MongoDB.Driver;
 
 namespace HeartPulse.Services;
 
-public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IUserService
+public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase, IAppLocalizer localizer) : IUserService
 {
     private readonly IMongoCollection<AppUser> _users = mongoDatabase.GetCollection<AppUser>("users");
 
@@ -56,6 +57,7 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
         }
 
         user.UserName = userName;
+        user.Language = string.IsNullOrWhiteSpace(user.Language) ? "uk" : localizer.NormalizeLanguage(user.Language);
         user.LastActiveAt = now;
         user.LastSeenOnlineAt = now;
         user.UpdatedAt = now;
@@ -110,6 +112,7 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
         };
 
         user.UserName = userName.Trim();
+        user.Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : localizer.NormalizeLanguage(user.Language);
         user.ChatId = chatId;
         user.Status = status;
         user.LastActiveAt = now;
@@ -198,6 +201,28 @@ public class UserService(SafePulseContext db, IMongoDatabase mongoDatabase) : IU
 
         var update = Builders<AppUser>.Update
             .Set(u => u.TelegramNotificationsEnabled, enabled)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
+    public async Task<AppUser?> SetLanguageAsync(string userId, string language, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var normalizedLanguage = localizer.NormalizeLanguage(language);
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.Language, normalizedLanguage)
             .Set(u => u.UpdatedAt, now);
 
         return await _users.FindOneAndUpdateAsync(

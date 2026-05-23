@@ -8,6 +8,7 @@ using HeartPulse.Data;
 using HeartPulse.Formatters;
 using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Hubs;
+using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Notifiers;
 using HeartPulse.Notifiers.Builders;
@@ -19,8 +20,21 @@ using MongoDB.Driver;
 using Scalar.AspNetCore;
 using Telegram.Bot;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
+using Serilog.Events;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.Host.UseSerilog((context, services, configuration) => configuration
+    .MinimumLevel.Information()
+    .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.AspNetCore", LogEventLevel.Warning)
+    .MinimumLevel.Override("Microsoft.EntityFrameworkCore", LogEventLevel.Warning)
+    .ReadFrom.Configuration(context.Configuration)
+    .ReadFrom.Services(services)
+    .Enrich.FromLogContext()
+    .WriteTo.Console(outputTemplate:
+        "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext} {Message:lj}{NewLine}{Exception}"));
 
 builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection("Telegram"));
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
@@ -104,6 +118,7 @@ services.AddScoped<IUserService, UserService>();
 services.AddScoped<IGroupService, GroupService>();
 services.AddScoped<IAuthService, AuthService>();
 services.AddScoped<ITelegramLinkService, TelegramLinkService>();
+services.AddSingleton<IAppLocalizer, JsonAppLocalizer>();
 services.AddScoped<IGroupNotificationBuilder, GroupNotificationBuilder>();
 services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();
 services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
@@ -120,12 +135,9 @@ services.AddScoped<ITelegramCommandHandler, StartCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, CreateGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, JoinGroupCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, LinkTelegramCommandHandler>();
+services.AddScoped<ITelegramCommandHandler, LanguageCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, TelegramNotificationsCommandHandler>();
 services.AddScoped<ITelegramCommandHandler, UnknownCommandHandler>();
-
-builder.Logging.ClearProviders();
-builder.Logging.AddConsole();
-builder.Logging.AddDebug();
 
 var app = builder.Build();
 
@@ -146,6 +158,10 @@ app.MapScalarApiReference();
 
 app.UseDefaultFiles();
 app.UseStaticFiles();
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+});
 app.UseCors("WebUi");
 app.UseAuthentication();
 app.UseAuthorization();

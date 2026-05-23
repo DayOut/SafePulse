@@ -1,4 +1,5 @@
 using HeartPulse.DTOs;
+using HeartPulse.Exceptions;
 using HeartPulse.Hubs;
 using HeartPulse.Models;
 using HeartPulse.Services.Interfaces;
@@ -7,6 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using MongoDB.Driver;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 
 namespace HeartPulse.Controllers;
 
@@ -332,10 +334,22 @@ public class GroupsController(
         {
             try
             {
+                var text = $"{requesterName} просить оновити статус у групі {groupName}.";
                 await bot.SendMessage(
                     chatId,
-                    $"{requesterName} просить оновити статус у групі {groupName}.",
+                    text,
                     replyMarkup: TelegramController.StatusKeyboard);
+            }
+            catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
+            {
+                var text = $"{requesterName} просить оновити статус у групі {groupName}.";
+                var tooLong = new TelegramMessageTooLongException(chatId, text, ex);
+                logger.LogError(
+                    tooLong,
+                    "Telegram status request notification is too long. ChatId: {ChatId}, TextLength: {TextLength}, TextPreview: {TextPreview}",
+                    tooLong.ChatId,
+                    tooLong.TextLength,
+                    tooLong.TextPreview);
             }
             catch (Exception ex)
             {

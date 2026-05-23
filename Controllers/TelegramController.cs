@@ -1,6 +1,8 @@
 using System.Text.RegularExpressions;
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
+using HeartPulse.Exceptions;
+using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Options;
 using HeartPulse.Services.Interfaces;
@@ -8,6 +10,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -22,6 +25,7 @@ public class TelegramController(
     IUserService userService,
     ITelegramCommandDispatcher dispatcher, 
     IOptions<TelegramOptions> opts,
+    IAppLocalizer localizer,
     ILogger<TelegramController> logger)
     : ControllerBase
 {
@@ -29,22 +33,21 @@ public class TelegramController(
 
     public const string BotUsername = "safe_pulse_test_bot";
 
-    public static readonly ReplyKeyboardMarkup StatusKeyboard = new(new[]
-    {
-        new KeyboardButton[] { "В безпеці", "SOS", "В укритті" }
-    })
-    {
-        ResizeKeyboard = true,
-        OneTimeKeyboard = false
-    };
+    public static readonly ReplyKeyboardMarkup StatusKeyboard = BuildStatusKeyboard("uk");
 
-    private static string FormatStatus(UserStatus status) => status switch
+    public static ReplyKeyboardMarkup BuildStatusKeyboard(string? language)
     {
-        UserStatus.Safe => "✅ В безпеці",
-        UserStatus.NeedHelp => "🆘 Потрібна допомога",
-        UserStatus.InShelter => "🏠 В укритті",
-        _ => "❔ Невідомо"
-    };
+        var safe = language == "uk" ? "В безпеці" : "Safe";
+        var shelter = language == "uk" ? "В укритті" : "In shelter";
+        return new ReplyKeyboardMarkup(new[]
+        {
+            new KeyboardButton[] { safe, "SOS", shelter }
+        })
+        {
+            ResizeKeyboard = true,
+            OneTimeKeyboard = false
+        };
+    }
 
     private static readonly Regex MdV2EscapeRegex =
         new(@"([_*\[\]()~`>#+\-=|{}.!])", RegexOptions.Compiled);
@@ -83,13 +86,27 @@ public class TelegramController(
 
         var result = await dispatcher.DispatchAsync(context, ct);
 
-        var reply = result?.ReplyText ?? "Доступні команди: /safe, /help, /shelter, /group, /create <назва>, /join <ID_групи>, /link <код>";
+        var reply = result?.ReplyText ?? localizer.Text("telegram.commands", user.Language);
 
-        await bot.SendMessage(
-            chatId,
-            reply,
-            replyMarkup: result?.UseStatusKeyboard == true ? StatusKeyboard : null,
-            cancellationToken: ct);
+        try
+        {
+            await bot.SendMessage(
+                chatId,
+                reply,
+                replyMarkup: result?.UseStatusKeyboard == true ? BuildStatusKeyboard(user.Language) : null,
+                cancellationToken: ct);
+        }
+        catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
+        {
+            var tooLong = new TelegramMessageTooLongException(chatId, reply, ex);
+            logger.LogError(
+                tooLong,
+                "Telegram webhook reply is too long. ChatId: {ChatId}, TextLength: {TextLength}, TextPreview: {TextPreview}",
+                tooLong.ChatId,
+                tooLong.TextLength,
+                tooLong.TextPreview);
+            throw tooLong;
+        }
 
         return Ok();
     }

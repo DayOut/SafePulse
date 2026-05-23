@@ -168,6 +168,18 @@ public class AuthController(
         return user is null ? NotFound() : Ok(ToDto(user));
     }
 
+    [Authorize]
+    [HttpPatch("me/language")]
+    public async Task<ActionResult<UserDto>> UpdateLanguage([FromBody] UpdateLanguageRequest request, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var user = await userService.SetLanguageAsync(userId, request.Language, ct);
+        return user is null ? NotFound() : Ok(ToDto(user));
+    }
+
     private void SetRefreshCookie(string refreshToken)
     {
         Response.Cookies.Append(RefreshCookieName, refreshToken, new CookieOptions
@@ -202,6 +214,7 @@ public class AuthController(
         UserName = user.UserName,
         ChatId = user.ChatId,
         TelegramUserId = user.TelegramUserId,
+        Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : user.Language,
         Status = user.Status.ToString(),
         LastActiveAt = user.LastActiveAt,
         LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,

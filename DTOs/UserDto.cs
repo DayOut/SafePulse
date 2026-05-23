@@ -6,9 +6,15 @@ public class UserDto
     public string UserName { get; set; } = default!;
     public long? ChatId { get; set; }
     public string? TelegramUserId { get; set; }
+    public string Language { get; set; } = "en";
     public string Status { get; set; } = default!;
     public DateTime LastActiveAt { get; set; }
     public DateTime LastSeenOnlineAt { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime UpdatedAt { get; set; }
+}
+
+public class UpdateLanguageRequest
+{
+    public string Language { get; set; } = default!;
 }
