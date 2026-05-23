@@ -692,6 +692,7 @@ function GroupsPage({
   const [inviteNote, setInviteNote] = useState("");
   const [latestInvite, setLatestInvite] = useState<string | null>(null);
   const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
+  const [requestCreatedMessage, setRequestCreatedMessage] = useState<string | null>(null);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isJoinModalOpen, setJoinModalOpen] = useState(false);
   const [deleteTarget, setDeleteTarget] = useState<MyGroupDto | null>(null);
@@ -733,8 +734,17 @@ function GroupsPage({
     mutationFn: () => requestGroupStatusUpdate(settings, accessToken, selectedGroup!.Id),
     onSuccess: (request) => {
       setLatestStatusRequest(`${request.RequestedByUserName} requested status updates at ${formatDateTime(request.CreatedAt)}`);
+      setRequestCreatedMessage(`Status update requested for ${request.GroupName}.`);
     },
   });
+
+  useEffect(() => {
+    if (!requestCreatedMessage)
+      return;
+
+    const timer = window.setTimeout(() => setRequestCreatedMessage(null), 3000);
+    return () => window.clearTimeout(timer);
+  }, [requestCreatedMessage]);
 
   const removeMemberMutation = useMutation({
     mutationFn: (userId: string) => removeGroupMember(settings, accessToken, selectedGroup!.Id, userId),
@@ -866,6 +876,7 @@ function GroupsPage({
           onConfirm={() => deleteGroupMutation.mutate(deleteTarget.Id)}
         />
       )}
+      {requestCreatedMessage && <StatusChangedToast message={requestCreatedMessage} />}
     </section>
   );
 }

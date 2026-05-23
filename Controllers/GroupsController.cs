@@ -21,6 +21,7 @@ public class GroupsController(
     IMongoDatabase database,
     IHubContext<StatusHub> statusHub,
     ITelegramBotClient bot,
+    IServiceScopeFactory scopeFactory,
     ILogger<GroupsController> logger) : ControllerBase
 {
     [HttpPost]
@@ -221,36 +222,6 @@ public class GroupsController(
         };
 
         await requests.InsertOneAsync(request, cancellationToken: ct);
-        var members = await groupService.GetGroupMembersAsync(group.Id, ct);
-        var resetUsers = new List<AppUser>();
-
-        foreach (var member in members.Where(member => member.User.Status == UserStatus.Safe))
-        {
-            var updated = await userService.UpdateStatusAsync(member.User.Id, UserStatus.Unknown, ct);
-            if (updated is not null)
-                resetUsers.Add(updated);
-        }
-
-        foreach (var resetUser in resetUsers)
-        {
-            await statusHub.Clients.Group(group.Id).SendAsync("statusChanged", new StatusChangedDto
-            {
-                UserId = resetUser.Id,
-                UserName = resetUser.UserName,
-                Status = resetUser.Status.ToString(),
-                LastActiveAt = resetUser.LastActiveAt,
-                LastSeenOnlineAt = resetUser.LastSeenOnlineAt ?? resetUser.LastActiveAt,
-                GroupIds = new[] { group.Id }
-            }, ct);
-        }
-
-        if (resetUsers.Count > 0)
-        {
-            logger.LogInformation(
-                "Reset {UserCount} safe users to Unknown after status update request in group {GroupId}",
-                resetUsers.Count,
-                group.Id);
-        }
 
         var dto = new GroupStatusRequestedDto
         {
@@ -264,14 +235,7 @@ public class GroupsController(
 
         await statusHub.Clients.Group(group.Id).SendAsync("groupStatusRequested", dto, ct);
 
-        var chatIds = members
-            .Where(member => member.User.TelegramNotificationsEnabled != false)
-            .Select(member => member.User.ChatId)
-            .Where(chatId => chatId.HasValue)
-            .Select(chatId => chatId!.Value)
-            .Distinct()
-            .ToList();
-        _ = NotifyTelegramStatusRequestAsync(chatIds, group.Name, requester.UserName);
+        _ = ProcessStatusRequestSideEffectsAsync(group.Id, group.Name, requester.UserName);
 
         return Ok(dto);
     }
@@ -384,6 +348,61 @@ public class GroupsController(
             {
                 logger.LogWarning(ex, "Failed to send group status request notification to Telegram chat {ChatId}", chatId);
             }
+        }
+    }
+
+    private async Task ProcessStatusRequestSideEffectsAsync(string groupId, string groupName, string requesterName)
+    {
+        try
+        {
+            await using var scope = scopeFactory.CreateAsyncScope();
+            var scopedGroupService = scope.ServiceProvider.GetRequiredService<IGroupService>();
+            var scopedUserService = scope.ServiceProvider.GetRequiredService<IUserService>();
+            var scopedStatusHub = scope.ServiceProvider.GetRequiredService<IHubContext<StatusHub>>();
+
+            var members = await scopedGroupService.GetGroupMembersAsync(groupId, CancellationToken.None);
+            var resetUsers = new List<AppUser>();
+
+            foreach (var member in members.Where(member => member.User.Status == UserStatus.Safe))
+            {
+                var updated = await scopedUserService.UpdateStatusAsync(member.User.Id, UserStatus.Unknown, CancellationToken.None);
+                if (updated is not null)
+                    resetUsers.Add(updated);
+            }
+
+            foreach (var resetUser in resetUsers)
+            {
+                await scopedStatusHub.Clients.Group(groupId).SendAsync("statusChanged", new StatusChangedDto
+                {
+                    UserId = resetUser.Id,
+                    UserName = resetUser.UserName,
+                    Status = resetUser.Status.ToString(),
+                    LastActiveAt = resetUser.LastActiveAt,
+                    LastSeenOnlineAt = resetUser.LastSeenOnlineAt ?? resetUser.LastActiveAt,
+                    GroupIds = new[] { groupId }
+                }, CancellationToken.None);
+            }
+
+            if (resetUsers.Count > 0)
+            {
+                logger.LogInformation(
+                    "Reset {UserCount} safe users to Unknown after status update request in group {GroupId}",
+                    resetUsers.Count,
+                    groupId);
+            }
+
+            var chatIds = members
+                .Where(member => member.User.TelegramNotificationsEnabled != false)
+                .Select(member => member.User.ChatId)
+                .Where(chatId => chatId.HasValue)
+                .Select(chatId => chatId!.Value)
+                .Distinct()
+                .ToList();
+            await NotifyTelegramStatusRequestAsync(chatIds, groupName, requesterName);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to process status request side effects for group {GroupId}", groupId);
         }
     }
 }
