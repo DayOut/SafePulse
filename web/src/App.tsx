@@ -306,9 +306,6 @@ export default function App() {
   if (!session) {
     return (
       <LoginPage
-        draftSettings={draftSettings}
-        setDraftSettings={setDraftSettings}
-        onSubmitSettings={persistSettings}
         onLogin={(payload) => passwordLoginMutation.mutate(payload)}
         onRegister={(payload) => registerMutation.mutate(payload)}
         error={passwordLoginMutation.error?.message ?? registerMutation.error?.message}
@@ -424,17 +421,11 @@ export default function App() {
 
 // ── Login page ──────────────────────────────────────────────────────
 function LoginPage({
-  draftSettings,
-  setDraftSettings,
-  onSubmitSettings,
   onLogin,
   onRegister,
   error,
   isLoading,
 }: {
-  draftSettings: AppSettings;
-  setDraftSettings: (s: AppSettings) => void;
-  onSubmitSettings: (e: FormEvent) => void;
   onLogin: (p: { email: string; password: string }) => void;
   onRegister: (p: { email: string; userName: string; password: string }) => void;
   error?: string;
@@ -444,7 +435,6 @@ function LoginPage({
   const [email, setEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
-  const [showSettings, setShowSettings] = useState(false);
 
   function submitAuth(event: FormEvent) {
     event.preventDefault();
@@ -495,45 +485,6 @@ function LoginPage({
         </form>
 
         {error && <div className="sp-error-box">! {error}</div>}
-
-
-        {/* API settings */}
-        <div>
-          <button
-            type="button"
-            style={{ background: "none", border: "none", cursor: "pointer", padding: 0 }}
-            onClick={() => setShowSettings((s) => !s)}
-          >
-            <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-4)", letterSpacing: "0.14em" }}>
-              {showSettings ? "▾" : "▸"} API SETTINGS
-            </span>
-          </button>
-          {showSettings && (
-            <form style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 10 }}
-              onSubmit={onSubmitSettings}>
-              <SpField label="API URL" placeholder="Same origin" value={draftSettings.apiBaseUrl}
-                onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
-              <SpField label="DEV USER ID" value={draftSettings.devUserId}
-                onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
-              <SpField label="DEV USER NAME" value={draftSettings.devUserName}
-                onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
-              <button className="sp-field-save-btn" type="submit">
-                <Save size={13} /> SAVE SETTINGS
-              </button>
-            </form>
-          )}
-        </div>
-
-        {/* Endpoint footer */}
-        <div className="sp-login-footer">
-          <span className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>
-            ENDPOINT
-          </span>
-          <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-2)", display: "flex", alignItems: "center", gap: 6 }}>
-            <span style={{ width: 6, height: 6, borderRadius: "50%", background: "var(--sp-safe)" }} className="sp-pulse" />
-            {draftSettings.apiBaseUrl || "same-origin"} · v1
-          </span>
-        </div>
       </div>
     </div>
   );
