@@ -187,7 +187,7 @@ button, input {
    App layout
    ============================================================ */
 .app-content {
-  padding-bottom: calc(110px + env(safe-area-inset-bottom));
+  padding-bottom: calc(180px + env(safe-area-inset-bottom));
   padding-top: 0;
 }
 
@@ -335,12 +335,21 @@ button, input {
   left: 0; right: 0;
   bottom: 0;
   padding-bottom: calc(22px + env(safe-area-inset-bottom));
+  padding-top: 72px;
   display: flex;
   flex-direction: column;
   align-items: center;
   pointer-events: none;
   z-index: 30;
   gap: 8px;
+  /* Gradient shelf fades page content out, draws eye to the buttons */
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(10, 10, 10, 0.55) 38%,
+    rgba(10, 10, 10, 0.88) 72%,
+    rgba(10, 10, 10, 0.96) 100%
+  );
 }
 
 .sp-cluster-meta {
@@ -395,32 +404,32 @@ button, input {
   border: none;
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 10px 18px;
+  gap: 10px;
+  padding: 13px 22px;
   cursor: pointer;
   position: relative;
-  transition: background 100ms;
+  transition: background 120ms, filter 120ms;
   background: transparent;
 }
-.sp-cluster-btn:hover:not(:disabled) { background: var(--sp-hover); }
-.sp-cluster-btn:disabled { opacity: 0.6; cursor: wait; }
+.sp-cluster-btn:hover:not(:disabled) { filter: brightness(1.15); }
+.sp-cluster-btn:disabled { opacity: 0.55; cursor: wait; }
 
 .sp-cluster-btn-icon {
-  width: 30px; height: 30px;
+  width: 36px; height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
-  flex: 0 0 30px;
-  border: 1px solid var(--sp-border);
+  flex: 0 0 36px;
+  border: 1px solid transparent;
 }
 
 .sp-cluster-btn-label {
   font-family: var(--sp-mono);
   text-transform: uppercase;
   letter-spacing: 0.1em;
-  font-size: 9px;
-  color: var(--sp-fg-3);
-  font-weight: 600;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--sp-fg-2);
 }
 
 .sp-cluster-active-dot {
@@ -432,28 +441,31 @@ button, input {
   animation: sp-pulse 1.6s ease-in-out infinite;
 }
 
-/* Safe */
-.sp-cluster-btn--safe .sp-cluster-btn-icon   { border-color: var(--sp-safe-dim); color: var(--sp-safe); }
-.sp-cluster-btn--safe.active                 { background: oklch(0.14 0.03 145); }
-.sp-cluster-btn--safe.active .sp-cluster-btn-icon  { border-color: var(--sp-safe); background: var(--sp-safe-bg); }
-.sp-cluster-btn--safe.active .sp-cluster-btn-label { color: var(--sp-safe); }
+/* Safe — lime green */
+.sp-cluster-btn--safe                              { background: oklch(0.30 0.11 145); }
+.sp-cluster-btn--safe .sp-cluster-btn-icon         { border-color: var(--sp-safe); background: var(--sp-safe); color: #0a0a0a; }
+.sp-cluster-btn--safe .sp-cluster-btn-label        { color: var(--sp-safe); }
+.sp-cluster-btn--safe.active                       { background: oklch(0.40 0.15 145); }
+.sp-cluster-btn--safe.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.72 0.17 145 / 0.4); }
 
-/* Shelter */
-.sp-cluster-btn--shelter .sp-cluster-btn-icon   { border-color: var(--sp-shelter-dim); color: var(--sp-shelter); }
-.sp-cluster-btn--shelter.active                  { background: oklch(0.14 0.03 215); }
-.sp-cluster-btn--shelter.active .sp-cluster-btn-icon  { border-color: var(--sp-shelter); background: var(--sp-shelter-bg); }
-.sp-cluster-btn--shelter.active .sp-cluster-btn-label { color: var(--sp-shelter); }
+/* Shelter — cyan */
+.sp-cluster-btn--shelter                              { background: oklch(0.28 0.09 215); }
+.sp-cluster-btn--shelter .sp-cluster-btn-icon         { border-color: var(--sp-shelter); background: var(--sp-shelter); color: #0a0a0a; }
+.sp-cluster-btn--shelter .sp-cluster-btn-label        { color: var(--sp-shelter); }
+.sp-cluster-btn--shelter.active                       { background: oklch(0.38 0.13 215); }
+.sp-cluster-btn--shelter.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.72 0.13 215 / 0.4); }
 
-/* Help / SOS */
-.sp-cluster-btn--help                        { background: var(--sp-help-bg); }
-.sp-cluster-btn--help .sp-cluster-btn-icon   {
+/* Help / SOS — orange-red */
+.sp-cluster-btn--help                              { background: oklch(0.34 0.14 25); }
+.sp-cluster-btn--help .sp-cluster-btn-icon         {
   border-color: var(--sp-help);
-  color: var(--sp-help);
+  background: var(--sp-help);
+  color: #fff;
   animation: sp-square-pulse 1.4s ease-out infinite;
 }
-.sp-cluster-btn--help.active                 { background: oklch(0.20 0.07 25); }
-.sp-cluster-btn--help.active .sp-cluster-btn-icon  { background: var(--sp-help); color: #fff; }
-.sp-cluster-btn--help .sp-cluster-btn-label  { color: var(--sp-help); }
+.sp-cluster-btn--help .sp-cluster-btn-label        { color: var(--sp-help); }
+.sp-cluster-btn--help.active                       { background: oklch(0.46 0.18 25); }
+.sp-cluster-btn--help.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.66 0.21 25 / 0.45); }
 
 /* ============================================================
    Login page
@@ -1237,7 +1249,7 @@ button, input {
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
-  bottom: calc(110px + env(safe-area-inset-bottom) + 12px);
+  bottom: calc(130px + env(safe-area-inset-bottom) + 12px);
   display: flex;
   align-items: center;
   gap: 10px;
@@ -1680,7 +1692,11 @@ button, input {
   /* Mobile tab bar is never shown on desktop */
   .sp-mobile-tabbar { display: none; }
 
-  /* Cluster and toast offset to match content area */
-  .sp-cluster-wrapper { left: 64px; }
+  /* Cluster and toast offset to match content area; remove mobile gradient */
+  .sp-cluster-wrapper {
+    left: 64px;
+    padding-top: 24px;
+    background: none;
+  }
   .sp-toast { left: calc(50% + 32px); }
 }
