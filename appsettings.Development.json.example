@@ -47,10 +47,12 @@
   },
   "FakeStatusSimulator": {
     "Enabled": true,
-    "GroupName": "fear group",
     "OwnerUserId": "admin-1",
-    "UserCount": 130,
     "IntervalSeconds": 10,
-    "UsersChangedPerTick": 12
+    "UsersChangedPerTick": 3,
+    "Groups": [
+      { "GroupName": "Test Group 1", "UserCount": 10 },
+      { "GroupName": "Test Group 2", "UserCount": 25 }
+    ]
   }
 }

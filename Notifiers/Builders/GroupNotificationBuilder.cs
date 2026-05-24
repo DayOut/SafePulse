@@ -83,6 +83,11 @@ public class GroupNotificationBuilder(
             if (members.Count == 0)
                 continue;
 
+            var isLargeGroup = members.Count > CompactGroupMemberThreshold;
+
+            if (isLargeGroup && changedUser.Status != UserStatus.NeedHelp)
+                continue;
+
             foreach (var member in members)
             {
                 if (member.ChatId.HasValue &&
@@ -90,8 +95,8 @@ public class GroupNotificationBuilder(
                     !presenceTracker.IsOnline(member.Id))
                 {
                     var language = localizer.NormalizeLanguage(member.Language);
-                    var text = members.Count > CompactGroupMemberThreshold
-                        ? BuildCompactStatusText(group, members, language)
+                    var text = isLargeGroup
+                        ? BuildNeedHelpAlertText(group, changedUser, language)
                         : BuildFullStatusText(group, members, changedUser.Id, language);
                     result.Add(new GroupStatusNotification(member.ChatId.Value, group.Id, text, language));
                 }
@@ -124,35 +129,12 @@ public class GroupNotificationBuilder(
         return sb.ToString();
     }
 
-    private string BuildCompactStatusText(Group group, IReadOnlyList<AppUser> members, string language)
+    private string BuildNeedHelpAlertText(Group group, AppUser changedUser, string language)
     {
+        var safeUserName = WebUtility.HtmlEncode(changedUser.UserName ?? changedUser.Id);
         var safeGroupName = WebUtility.HtmlEncode(group.Name);
         var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
-        var needHelpMembers = members
-            .Where(member => member.Status == UserStatus.NeedHelp)
-            .OrderByDescending(member => member.LastActiveAt)
-            .ToList();
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"<b>{localizer.Text("telegram.largeStatusTitle", language)}</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
-        sb.AppendLine(localizer.Text("telegram.largeStatusSummary", language, members.Count));
-        sb.AppendLine();
-
-        if (needHelpMembers.Count == 0)
-        {
-            sb.AppendLine(localizer.Text("telegram.noNeedHelp", language));
-            return sb.ToString();
-        }
-
-        sb.AppendLine($"<b>{localizer.Text("telegram.needHelpCount", language, needHelpMembers.Count)}</b>");
-        foreach (var member in needHelpMembers)
-        {
-            var userName = WebUtility.HtmlEncode(member.UserName ?? member.Id);
-            var time = member.LastActiveAt.ToHumanTime();
-            sb.AppendLine($"- {userName} ({time})");
-        }
-
-        return sb.ToString();
+        return localizer.Text("telegram.largeGroupNeedHelp", language, safeUserName, safeGroupName, groupLink);
     }
 
     private string BuildGroupLink(Group group)

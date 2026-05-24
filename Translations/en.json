@@ -32,5 +32,6 @@
   "telegram.largeStatusSummary": "There are {0} members in the group. View the full list in the web UI.",
   "telegram.noNeedHelp": "No members currently have \"Need help\" status.",
   "telegram.needHelpCount": "Need help: {0}",
-  "telegram.statusRequest": "{0} requests a status update in group <a href=\"{2}\">{1}</a>."
+  "telegram.statusRequest": "{0} requests a status update in group <a href=\"{2}\">{1}</a>.",
+  "telegram.largeGroupNeedHelp": "🆘 <b>{0}</b> needs help in group <a href=\"{2}\">{1}</a>."
 }

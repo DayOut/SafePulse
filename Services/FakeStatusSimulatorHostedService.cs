@@ -22,10 +22,10 @@ public class FakeStatusSimulatorHostedService(
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
-        if (!_options.Enabled)
+        if (!_options.Enabled || _options.Groups.Count == 0)
             return;
 
-        var group = await EnsureGroupAndUsersAsync(stoppingToken);
+        var groupIds = await EnsureGroupsAndUsersAsync(stoppingToken);
         var interval = TimeSpan.FromSeconds(Math.Max(1, _options.IntervalSeconds));
 
         using var timer = new PeriodicTimer(interval);
@@ -33,7 +33,8 @@ public class FakeStatusSimulatorHostedService(
         {
             try
             {
-                await UpdateFakeStatusesAsync(group.Id, stoppingToken);
+                foreach (var groupId in groupIds)
+                    await UpdateFakeStatusesAsync(groupId, stoppingToken);
             }
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
@@ -46,22 +47,36 @@ public class FakeStatusSimulatorHostedService(
         }
     }
 
-    private async Task<Group> EnsureGroupAndUsersAsync(CancellationToken ct)
+    private async Task<List<string>> EnsureGroupsAndUsersAsync(CancellationToken ct)
+    {
+        var groupIds = new List<string>();
+
+        foreach (var config in _options.Groups)
+        {
+            var groupId = await EnsureGroupAndUsersAsync(config, ct);
+            groupIds.Add(groupId);
+        }
+
+        return groupIds;
+    }
+
+    private async Task<string> EnsureGroupAndUsersAsync(FakeGroupConfig config, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
+        var slug = GroupSlug(config.GroupName);
+
         var groupFilter = Builders<Group>.Filter.And(
-            Builders<Group>.Filter.Regex(g => g.Name, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(_options.GroupName)}$", "i")),
+            Builders<Group>.Filter.Regex(g => g.Name, new BsonRegularExpression($"^{System.Text.RegularExpressions.Regex.Escape(config.GroupName)}$", "i")),
             Builders<Group>.Filter.Ne(g => g.IsDeleted, true));
 
-        var group = await _groups.Find(groupFilter)
-            .FirstOrDefaultAsync(ct);
+        var group = await _groups.Find(groupFilter).FirstOrDefaultAsync(ct);
 
         if (group is null)
         {
             group = new Group
             {
                 Id = Guid.NewGuid().ToString(),
-                Name = _options.GroupName,
+                Name = config.GroupName,
                 OwnerId = _options.OwnerUserId,
                 CreatedAt = now,
                 UpdatedAt = now,
@@ -71,18 +86,17 @@ public class FakeStatusSimulatorHostedService(
             await _groups.InsertOneAsync(group, cancellationToken: ct);
         }
 
-        for (var index = 1; index <= _options.UserCount; index++)
+        for (var index = 1; index <= config.UserCount; index++)
         {
-            var userId = $"fake-fear-group-{index:000}";
-            var userName = $"Fake User {index:000}";
-            var status = PickStatus();
+            var userId = $"fake-{slug}-{index:000}";
+            var userName = $"Fake {config.GroupName} {index:000}";
 
             await _users.UpdateOneAsync(
                 u => u.Id == userId,
                 Builders<AppUser>.Update
                     .SetOnInsert(u => u.Id, userId)
                     .Set(u => u.UserName, userName)
-                    .SetOnInsert(u => u.Status, status)
+                    .SetOnInsert(u => u.Status, PickStatus())
                     .Set(u => u.IsFake, true)
                     .Set(u => u.IsDeleted, false)
                     .Set(u => u.LastActiveAt, now)
@@ -105,13 +119,14 @@ public class FakeStatusSimulatorHostedService(
                 ct);
         }
 
-        logger.LogInformation("Fake status simulator seeded {Count} fake users into group {GroupName}", _options.UserCount, group.Name);
-        return group;
+        logger.LogInformation("Fake simulator seeded {Count} fake users into group {GroupName}", config.UserCount, config.GroupName);
+        return group.Id;
     }
 
     private async Task UpdateFakeStatusesAsync(string groupId, CancellationToken ct)
     {
-        var fakeUserIds = await _groupUsers.Find(gu => gu.GroupId == groupId && gu.IsDeleted != true)
+        var fakeUserIds = await _groupUsers
+            .Find(gu => gu.GroupId == groupId && gu.IsDeleted != true)
             .Project(gu => gu.UserId)
             .ToListAsync(ct);
 
@@ -120,7 +135,6 @@ public class FakeStatusSimulatorHostedService(
 
         var count = Math.Clamp(_options.UsersChangedPerTick, 1, fakeUserIds.Count);
         var selectedUserIds = fakeUserIds
-            .Where(id => id.StartsWith("fake-fear-group-", StringComparison.Ordinal))
             .OrderBy(_ => _random.Next())
             .Take(count)
             .ToList();
@@ -130,7 +144,6 @@ public class FakeStatusSimulatorHostedService(
 
         foreach (var userId in selectedUserIds)
         {
-            var status = PickStatus();
             var user = await _users
                 .Find(u => u.Id == userId && u.IsFake == true && u.IsDeleted != true)
                 .FirstOrDefaultAsync(ct);
@@ -138,7 +151,7 @@ public class FakeStatusSimulatorHostedService(
             if (user is null)
                 continue;
 
-            await statusService.ChangeStatusAsync(user.Id, status, UserStatusChangeSource.FakeSimulator, ct);
+            await statusService.ChangeStatusAsync(user.Id, PickStatus(), UserStatusChangeSource.FakeSimulator, ct);
         }
     }
 
@@ -153,4 +166,10 @@ public class FakeStatusSimulatorHostedService(
             _ => UserStatus.NeedHelp
         };
     }
+
+    private static string GroupSlug(string groupName) =>
+        new string(groupName.ToLowerInvariant()
+            .Select(c => char.IsLetterOrDigit(c) ? c : '-')
+            .ToArray())
+            .Trim('-');
 }

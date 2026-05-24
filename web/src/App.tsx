@@ -35,7 +35,6 @@ import {
   createTelegramLinkCode,
   deleteGroup,
   disconnectTelegram,
-  devLogin,
   getCurrentUser,
   getMyGroups,
   getTelegramLinkStatus,
@@ -104,6 +103,7 @@ export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>(initialGroupId ? "groups" : "overview");
+  const [requestedGroupId, setRequestedGroupId] = useState<string | null>(initialGroupId);
   const [connectionState, setConnectionState] = useState("Disconnected");
   const [statusRequest, setStatusRequest] = useState<GroupStatusRequestedDto | null>(null);
   const [statusChangedMessage, setStatusChangedMessage] = useState<string | null>(null);
@@ -178,13 +178,6 @@ export default function App() {
     },
   });
 
-  const devLoginMutation = useMutation({
-    mutationFn: () => devLogin(settings),
-    onSuccess: (nextSession) => {
-      setSession(nextSession);
-      void queryClient.invalidateQueries();
-    },
-  });
 
   const logoutMutation = useMutation({
     mutationFn: () => logout(settings),
@@ -295,9 +288,8 @@ export default function App() {
         onSubmitSettings={persistSettings}
         onLogin={(payload) => passwordLoginMutation.mutate(payload)}
         onRegister={(payload) => registerMutation.mutate(payload)}
-        onDevLogin={() => devLoginMutation.mutate()}
-        error={passwordLoginMutation.error?.message ?? registerMutation.error?.message ?? devLoginMutation.error?.message}
-        isLoading={passwordLoginMutation.isPending || registerMutation.isPending || devLoginMutation.isPending}
+        error={passwordLoginMutation.error?.message ?? registerMutation.error?.message}
+        isLoading={passwordLoginMutation.isPending || registerMutation.isPending}
       />
     );
   }
@@ -357,6 +349,10 @@ export default function App() {
               for (const g of myGroups.data ?? [])
                 void requestGroupStatusUpdate(settings, session.AccessToken, g.Id);
             }}
+            onGroupClick={(groupId) => {
+              setRequestedGroupId(groupId);
+              setActiveTab("groups");
+            }}
           />
         )}
         {activeTab === "groups" && (
@@ -365,6 +361,7 @@ export default function App() {
             accessToken={session.AccessToken}
             currentUserId={session.User.Id}
             initialSelectedGroupId={initialGroupId}
+            openGroupId={requestedGroupId}
             onJoined={async () => {
               if (statusConnectionRef.current?.state === "Connected")
                 await statusConnectionRef.current.invoke("JoinUserGroups");
@@ -411,7 +408,6 @@ function LoginPage({
   onSubmitSettings,
   onLogin,
   onRegister,
-  onDevLogin,
   error,
   isLoading,
 }: {
@@ -420,7 +416,6 @@ function LoginPage({
   onSubmitSettings: (e: FormEvent) => void;
   onLogin: (p: { email: string; password: string }) => void;
   onRegister: (p: { email: string; userName: string; password: string }) => void;
-  onDevLogin: () => void;
   error?: string;
   isLoading: boolean;
 }) {
@@ -480,19 +475,6 @@ function LoginPage({
 
         {error && <div className="sp-error-box">! {error}</div>}
 
-        <div className="sp-divider">
-          <span className="sp-divider-line" />
-          <span className="sp-divider-text">OR</span>
-          <span className="sp-divider-line" />
-        </div>
-
-        <button className="sp-btn-secondary" disabled={isLoading} onClick={onDevLogin} type="button">
-          <TelegramIcon />
-          Continue with Telegram
-        </button>
-        <button className="sp-btn-ghost" disabled={isLoading} onClick={onDevLogin} type="button">
-          DEV LOGIN · ADMIN-1
-        </button>
 
         {/* API settings */}
         <div>
@@ -611,6 +593,7 @@ function OverviewPage({
   activeStatus,
   recentStatusChanges,
   onRequestAllStatus,
+  onGroupClick,
 }: {
   groups: MyGroupDto[];
   isLoading: boolean;
@@ -618,6 +601,7 @@ function OverviewPage({
   activeStatus: UserStatus;
   recentStatusChanges: StatusChangedDto[];
   onRequestAllStatus: () => void;
+  onGroupClick: (groupId: string) => void;
 }) {
   const t = useT();
   const lang = useContext(LanguageContext);
@@ -706,7 +690,7 @@ function OverviewPage({
               </div>
             </div>
             <div className="sp-group-list" style={{ marginTop: 10 }}>
-              {groups.map((g) => <OverviewGroupRow key={g.Id} group={g} />)}
+              {groups.map((g) => <OverviewGroupRow key={g.Id} group={g} onClick={() => onGroupClick(g.Id)} />)}
             </div>
           </div>
         )}
@@ -813,7 +797,7 @@ function StatTile({ status, value, total, label }: { status: UserStatus; value: 
   );
 }
 
-function OverviewGroupRow({ group }: { group: MyGroupDto }) {
+function OverviewGroupRow({ group, onClick }: { group: MyGroupDto; onClick: () => void }) {
   const t = useT();
   const bd = { Safe: 0, InShelter: 0, NeedHelp: 0, Unknown: 0 } as Record<UserStatus, number>;
   for (const m of group.Members) bd[m.Status] = (bd[m.Status] ?? 0) + 1;
@@ -821,7 +805,8 @@ function OverviewGroupRow({ group }: { group: MyGroupDto }) {
   const urgent = bd.NeedHelp > 0;
 
   return (
-    <div className={`sp-group-row ${urgent ? "sp-group-row--urgent" : ""}`}>
+    <div className={`sp-group-row ${urgent ? "sp-group-row--urgent" : ""}`}
+      onClick={onClick} style={{ cursor: "pointer" }}>
       <div className="sp-group-row-top">
         <div className="sp-group-row-info">
           <span className="sp-callsign" style={urgent ? { borderColor: "var(--sp-help)", color: "var(--sp-help)" } : {}}>
@@ -878,12 +863,14 @@ function GroupsPage({
   accessToken,
   currentUserId,
   initialSelectedGroupId,
+  openGroupId,
   onJoined,
 }: {
   settings: AppSettings;
   accessToken: string;
   currentUserId: string;
   initialSelectedGroupId: string | null;
+  openGroupId: string | null;
   onJoined: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
@@ -891,6 +878,10 @@ function GroupsPage({
   const [groupName, setGroupName] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
+
+  useEffect(() => {
+    if (openGroupId) setSelectedGroupId(openGroupId);
+  }, [openGroupId]);
   const [inviteNote, setInviteNote] = useState("");
   const [latestInvite, setLatestInvite] = useState<string | null>(null);
   const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
