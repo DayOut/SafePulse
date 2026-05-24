@@ -177,6 +177,11 @@ button, input {
   100% { box-shadow: inset 0 0 0 1px var(--sp-help), 0 0 0 10px transparent; }
 }
 
+@keyframes sp-cluster-unknown-flash {
+  0%, 100% { border-color: oklch(0.72 0.14 65); box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 10px oklch(0.72 0.14 65 / 0.45); }
+  50%       { border-color: var(--sp-border-hi); box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+}
+
 /* ============================================================
    Scrollbars
    ============================================================ */
@@ -380,6 +385,7 @@ button, input {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
   position: relative;
 }
+.sp-cluster--unknown { animation: sp-cluster-unknown-flash 1.2s ease-in-out infinite; }
 
 .sp-cluster::before,
 .sp-cluster::after {
@@ -445,14 +451,14 @@ button, input {
 .sp-cluster-btn--safe                              { background: oklch(0.30 0.11 145); }
 .sp-cluster-btn--safe .sp-cluster-btn-icon         { border-color: var(--sp-safe); background: var(--sp-safe); color: #0a0a0a; }
 .sp-cluster-btn--safe .sp-cluster-btn-label        { color: var(--sp-safe); }
-.sp-cluster-btn--safe.active                       { background: oklch(0.40 0.15 145); }
+.sp-cluster-btn--safe.active                       { background: oklch(0.40 0.15 145); box-shadow: inset 0 0 0 2px var(--sp-safe); }
 .sp-cluster-btn--safe.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.72 0.17 145 / 0.4); }
 
 /* Shelter — cyan */
 .sp-cluster-btn--shelter                              { background: oklch(0.28 0.09 215); }
 .sp-cluster-btn--shelter .sp-cluster-btn-icon         { border-color: var(--sp-shelter); background: var(--sp-shelter); color: #0a0a0a; }
 .sp-cluster-btn--shelter .sp-cluster-btn-label        { color: var(--sp-shelter); }
-.sp-cluster-btn--shelter.active                       { background: oklch(0.38 0.13 215); }
+.sp-cluster-btn--shelter.active                       { background: oklch(0.38 0.13 215); box-shadow: inset 0 0 0 2px var(--sp-shelter); }
 .sp-cluster-btn--shelter.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.72 0.13 215 / 0.4); }
 
 /* Help / SOS — orange-red */
@@ -464,7 +470,7 @@ button, input {
   animation: sp-square-pulse 1.4s ease-out infinite;
 }
 .sp-cluster-btn--help .sp-cluster-btn-label        { color: var(--sp-help); }
-.sp-cluster-btn--help.active                       { background: oklch(0.46 0.18 25); }
+.sp-cluster-btn--help.active                       { background: oklch(0.46 0.18 25); box-shadow: inset 0 0 0 2px var(--sp-help); }
 .sp-cluster-btn--help.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.66 0.21 25 / 0.45); }
 
 /* ============================================================

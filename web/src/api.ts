@@ -7,6 +7,10 @@ export type AppSettings = {
   overviewBlockSize: "small" | "medium" | "large";
 };
 
+export type AppConfig = {
+  TelegramBotUsername: string;
+};
+
 export type AuthSession = {
   AccessToken: string;
   AccessTokenExpiresAt: string;
@@ -186,6 +190,10 @@ export function logout(settings: AppSettings) {
   return request<void>(settings, "/api/auth/logout", null, {
     method: "POST",
   });
+}
+
+export function getAppConfig(settings: AppSettings) {
+  return request<AppConfig>(settings, "/api/config", null);
 }
 
 export function getCurrentUser(settings: AppSettings, accessToken: string) {

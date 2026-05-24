@@ -38,6 +38,7 @@ import {
   createTelegramLinkCode,
   deleteGroup,
   disconnectTelegram,
+  getAppConfig,
   getCurrentUser,
   getMyGroups,
   getTelegramLinkStatus,
@@ -536,7 +537,7 @@ function FloatingStatusCluster({
           <span className="sp-cluster-error sp-mono">{error}</span>
         </div>
       )}
-      <div className="sp-cluster">
+      <div className={`sp-cluster${activeStatus === "Unknown" ? " sp-cluster--unknown" : ""}`}>
         <ClusterBtn status="Safe" active={activeStatus === "Safe"} disabled={isUpdating}
           onClick={() => onUpdateStatus("Safe")} />
         <span className="sp-cluster-divider" />
@@ -1865,6 +1866,13 @@ function TelegramLinkPanel({
   const t = useT();
   const [codeId, setCodeId] = useState<string | null>(null);
 
+  const appConfig = useQuery({
+    queryKey: ["app-config", settings],
+    queryFn: () => getAppConfig(settings),
+    staleTime: Infinity,
+  });
+  const botUsername = appConfig.data?.TelegramBotUsername;
+
   const createCode = useMutation({
     mutationFn: () => createTelegramLinkCode(settings, accessToken),
     onSuccess: (code) => setCodeId(code.Id),
@@ -1924,7 +1932,19 @@ function TelegramLinkPanel({
         {createCode.data && (
           <div style={{ padding: 12, border: "1px solid var(--sp-border)", background: "var(--sp-bg)" }}>
             <p className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>{t("set.sendCode")}</p>
-            <p className="sp-mono" style={{ fontSize: 18, color: "var(--sp-fg)", marginTop: 6 }}>/link {createCode.data.Code}</p>
+            {botUsername ? (
+              <a
+                href={`https://t.me/${botUsername}?start=link_${createCode.data.Code}`}
+                target="_blank"
+                rel="noreferrer"
+                className="sp-mono"
+                style={{ fontSize: 15, color: "var(--sp-shelter)", marginTop: 6, display: "block", wordBreak: "break-all" }}
+              >
+                t.me/{botUsername}?start=link_{createCode.data.Code}
+              </a>
+            ) : (
+              <p className="sp-mono" style={{ fontSize: 18, color: "var(--sp-fg)", marginTop: 6 }}>/link {createCode.data.Code}</p>
+            )}
             <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", marginTop: 4 }}>
               Expires: {formatDateTime(createCode.data.ExpiresAt)}
             </p>

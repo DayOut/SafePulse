@@ -1,13 +1,14 @@
-using System.Text;
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
-using HeartPulse.Models;
+using HeartPulse.Localization;
 using HeartPulse.Services.Interfaces;
 
 namespace HeartPulse.Commands.Handlers;
 
 public class StartCommandHandler(
-    IGroupService groupService)
+    IGroupService groupService,
+    ITelegramLinkService telegramLinkService,
+    IAppLocalizer localizer)
     : ITelegramCommandHandler
 {
     public bool CanHandle(TelegramCommandContext context)
@@ -20,24 +21,37 @@ public class StartCommandHandler(
         CancellationToken ct)
     {
         var parts = context.RawText.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-        var sb = new StringBuilder();
+        var lang = localizer.NormalizeLanguage(context.User.Language);
+
         if (parts.Length < 2)
+            return new TelegramCommandResult(localizer.Text("telegram.start", lang));
+
+        var payload = parts[1];
+
+        if (payload.StartsWith("link_", StringComparison.OrdinalIgnoreCase))
         {
-            return new TelegramCommandResult("Привіт! Я фіксую твій стан безпеки. Команди: /safe, /help, /shelter, /group, /join <ID_групи>, /link <код>, /notifications off");
+            var code = payload["link_".Length..];
+            try
+            {
+                var userName = await telegramLinkService.ConsumeCodeAsync(
+                    code, context.User.Id, context.User.UserName, context.ChatId, ct);
+                return new TelegramCommandResult(localizer.Text("telegram.linked", lang, userName));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return new TelegramCommandResult(ex.Message);
+            }
         }
-        var groupName = parts[1];
-        var group = await groupService.GetByJoinPayloadAsync(groupName, ct);
+
+        var group = await groupService.GetByJoinPayloadAsync(payload, ct);
         if (group == null)
-            return new TelegramCommandResult("Групу не знайдено");
-        
+            return new TelegramCommandResult(localizer.Text("telegram.groupNotFound", lang));
+
         var userGroups = await groupService.GetUserGroupsAsync(context.User.Id, ct);
         if (userGroups.Any(g => g.Id == group.Id))
-            return new TelegramCommandResult("Ви вже в цій групі");
-        
-        await groupService.JoinUserToGroupAsync(context.User, group.Id, ct);
+            return new TelegramCommandResult(localizer.Text("telegram.alreadyInGroup", lang));
 
-        sb.AppendLine($"Ти успішно приєднався до групи {group.Name}");
-        
-        return new TelegramCommandResult(sb.ToString());
+        await groupService.JoinUserToGroupAsync(context.User, group.Id, ct);
+        return new TelegramCommandResult(localizer.Text("telegram.joinedGroup", lang, group.Name));
     }
 }
