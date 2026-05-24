@@ -33,5 +33,6 @@
   "telegram.noNeedHelp": "No members currently have \"Need help\" status.",
   "telegram.needHelpCount": "Need help: {0}",
   "telegram.statusRequest": "{0} requests a status update in group <a href=\"{2}\">{1}</a>.",
-  "telegram.largeGroupNeedHelp": "🆘 <b>{0}</b> needs help in group <a href=\"{2}\">{1}</a>."
+  "telegram.largeGroupNeedHelp": "🆘 <b>{0}</b> needs help in group <a href=\"{2}\">{1}</a>.",
+  "telegram.userStatusUpdate": "{0} <b>{1}</b>: {2} in <a href=\"{4}\">{3}</a>."
 }

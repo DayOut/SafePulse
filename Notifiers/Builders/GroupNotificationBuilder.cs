@@ -1,5 +1,4 @@
 using System.Net;
-using System.Text;
 using HeartPulse.Controllers;
 using HeartPulse.Data;
 using HeartPulse.DTOs;
@@ -95,9 +94,7 @@ public class GroupNotificationBuilder(
                     !presenceTracker.IsOnline(member.Id))
                 {
                     var language = localizer.NormalizeLanguage(member.Language);
-                    var text = isLargeGroup
-                        ? BuildNeedHelpAlertText(group, changedUser, language)
-                        : BuildFullStatusText(group, members, changedUser.Id, language);
+                    var text = BuildSingleUserUpdateText(group, changedUser, language);
                     result.Add(new GroupStatusNotification(member.ChatId.Value, group.Id, text, language));
                 }
             }
@@ -106,35 +103,20 @@ public class GroupNotificationBuilder(
         return result;
     }
 
-    private string BuildFullStatusText(Group group, IReadOnlyList<AppUser> members, string changedUserId, string language)
+    private string BuildSingleUserUpdateText(Group group, AppUser changedUser, string language)
     {
-        var safeGroupName = WebUtility.HtmlEncode(group.Name);
-        var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
-
-        var sb = new StringBuilder();
-        sb.AppendLine($"<b>{localizer.Text("telegram.fullStatusTitle", language)}</b> <a href=\"{groupLink}\">{safeGroupName}</a>");
-        sb.AppendLine();
-
-        foreach (var member in members)
+        var emoji = changedUser.Status switch
         {
-            var userName = WebUtility.HtmlEncode(member.UserName ?? member.Id);
-            var time = member.LastActiveAt.ToHumanTime();
-
-            if (changedUserId == member.Id)
-                sb.AppendLine($"- <b><u>{userName}: {formatter.FormatStatus(member.Status, language)} ({time})</u></b>");
-            else
-                sb.AppendLine($"- {userName}: {formatter.FormatStatus(member.Status, language)} ({time})");
-        }
-
-        return sb.ToString();
-    }
-
-    private string BuildNeedHelpAlertText(Group group, AppUser changedUser, string language)
-    {
+            UserStatus.Safe      => "✅",
+            UserStatus.InShelter => "🏠",
+            UserStatus.NeedHelp  => "🆘",
+            _                    => "❓"
+        };
         var safeUserName = WebUtility.HtmlEncode(changedUser.UserName ?? changedUser.Id);
         var safeGroupName = WebUtility.HtmlEncode(group.Name);
         var groupLink = WebUtility.HtmlEncode(BuildGroupLink(group));
-        return localizer.Text("telegram.largeGroupNeedHelp", language, safeUserName, safeGroupName, groupLink);
+        var statusText = formatter.FormatStatus(changedUser.Status, language);
+        return localizer.Text("telegram.userStatusUpdate", language, emoji, safeUserName, statusText, safeGroupName, groupLink);
     }
 
     private string BuildGroupLink(Group group)

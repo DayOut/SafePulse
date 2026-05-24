@@ -33,5 +33,6 @@
   "telegram.noNeedHelp": "Зараз немає учасників зі статусом \"Потребую допомоги\".",
   "telegram.needHelpCount": "Потребують допомоги: {0}",
   "telegram.statusRequest": "{0} просить оновити статус у групі <a href=\"{2}\">{1}</a>.",
-  "telegram.largeGroupNeedHelp": "🆘 <b>{0}</b> потребує допомоги у групі <a href=\"{2}\">{1}</a>."
+  "telegram.largeGroupNeedHelp": "🆘 <b>{0}</b> потребує допомоги у групі <a href=\"{2}\">{1}</a>.",
+  "telegram.userStatusUpdate": "{0} <b>{1}</b>: {2} у групі <a href=\"{4}\">{3}</a>."
 }
