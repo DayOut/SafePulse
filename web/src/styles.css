@@ -42,6 +42,42 @@
 
 :root { color-scheme: dark; }
 
+/* ============================================================
+   Light theme — warm off-white, darker status colors
+   ============================================================ */
+.sp-root--light {
+  color-scheme: light;
+
+  --sp-bg:        #fafaf7;
+  --sp-bg-deep:   #eeeeea;
+  --sp-surface:   #ffffff;
+  --sp-raised:    #f3f3ef;
+  --sp-hover:     #e8e8e2;
+  --sp-border:    #d6d6d0;
+  --sp-border-hi: #8a8a83;
+
+  --sp-fg:   #0a0a0a;
+  --sp-fg-2: #45453e;
+  --sp-fg-3: #6e6e66;
+  --sp-fg-4: #a5a59c;
+
+  --sp-safe:        oklch(0.52 0.18 145);
+  --sp-safe-dim:    oklch(0.74 0.12 145);
+  --sp-safe-bg:     oklch(0.96 0.05 145);
+
+  --sp-shelter:     oklch(0.50 0.16 215);
+  --sp-shelter-dim: oklch(0.72 0.10 215);
+  --sp-shelter-bg:  oklch(0.96 0.04 215);
+
+  --sp-help:        oklch(0.55 0.22 25);
+  --sp-help-dim:    oklch(0.75 0.15 25);
+  --sp-help-bg:     oklch(0.96 0.05 25);
+
+  --sp-unknown:     #6e6e66;
+  --sp-unknown-dim: #c8c8c0;
+  --sp-unknown-bg:  #efefea;
+}
+
 body {
   margin: 0;
   min-width: 320px;
@@ -472,6 +508,52 @@ button, input {
 .sp-cluster-btn--help .sp-cluster-btn-label        { color: var(--sp-help); }
 .sp-cluster-btn--help.active                       { background: oklch(0.46 0.18 25); box-shadow: inset 0 0 0 2px var(--sp-help); }
 .sp-cluster-btn--help.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.66 0.21 25 / 0.45); }
+
+/* ============================================================
+   Light theme component overrides
+   ============================================================ */
+
+/* Cluster bar — white HUD instead of near-black */
+.sp-root--light .sp-cluster {
+  background: rgba(255, 255, 255, 0.97);
+  border-color: var(--sp-border-hi);
+  box-shadow: 0 8px 32px rgba(40, 40, 30, 0.20);
+}
+.sp-root--light .sp-cluster::before,
+.sp-root--light .sp-cluster::after { border-color: var(--sp-fg-3); }
+
+/* Cluster buttons — lighter tinted backgrounds */
+.sp-root--light .sp-cluster-btn--safe     { background: var(--sp-safe-bg); }
+.sp-root--light .sp-cluster-btn--shelter  { background: var(--sp-shelter-bg); }
+.sp-root--light .sp-cluster-btn--help     { background: var(--sp-help-bg); }
+
+.sp-root--light .sp-cluster-btn--safe.active    { background: oklch(0.90 0.09 145); }
+.sp-root--light .sp-cluster-btn--shelter.active { background: oklch(0.90 0.07 215); }
+.sp-root--light .sp-cluster-btn--help.active    { background: oklch(0.90 0.09 25); }
+
+.sp-root--light .sp-cluster-btn--safe .sp-cluster-btn-icon    { color: #fff; }
+.sp-root--light .sp-cluster-btn--shelter .sp-cluster-btn-icon { color: #fff; }
+
+/* Cluster gradient shelf — light-adapted */
+.sp-root--light .sp-cluster-wrapper {
+  background: linear-gradient(
+    to bottom,
+    transparent 0%,
+    rgba(240, 240, 232, 0.55) 38%,
+    rgba(240, 240, 232, 0.90) 72%,
+    rgba(240, 240, 232, 0.97) 100%
+  );
+}
+
+/* Desktop left rail in light mode */
+.sp-root--light .sp-desktop-rail {
+  background: var(--sp-bg-deep, #eeeeea);
+  border-right-color: var(--sp-border);
+}
+
+/* Topbar in light mode — ensure it picks up surface color */
+.sp-root--light .sp-topbar { background: var(--sp-surface); border-bottom-color: var(--sp-border); }
+.sp-root--light .sp-mobile-tabbar { background: var(--sp-surface); border-bottom-color: var(--sp-border); }
 
 /* ============================================================
    Login page

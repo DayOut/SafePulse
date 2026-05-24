@@ -14,6 +14,7 @@ import {
   Settings,
   ShieldAlert,
   ShieldCheck,
+  Sun,
   Trash2,
   Users,
   X,
@@ -104,6 +105,16 @@ export default function App() {
   const initialGroupId = useMemo(() => readInitialGroupId(), []);
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [draftSettings, setDraftSettings] = useState<AppSettings>(() => loadSettings());
+  const [theme, setThemeState] = useState<"dark" | "light">(
+    () => (localStorage.getItem("safepulse-theme") as "dark" | "light") ?? "dark",
+  );
+  const setTheme = (t: "dark" | "light") => {
+    localStorage.setItem("safepulse-theme", t);
+    setThemeState(t);
+  };
+  useEffect(() => {
+    document.body.classList.toggle("sp-root--light", theme === "light");
+  }, [theme]);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>(initialGroupId ? "groups" : "overview");
@@ -376,6 +387,8 @@ export default function App() {
               accessToken={session.AccessToken}
               currentUser={currentUser.data ?? session.User}
               onSubmit={persistSettings}
+              theme={theme}
+              onThemeChange={setTheme}
             />
           )}
         </div>
@@ -1674,6 +1687,8 @@ function SettingsPage({
   accessToken,
   currentUser,
   onSubmit,
+  theme,
+  onThemeChange,
 }: {
   draftSettings: AppSettings;
   setDraftSettings: (s: AppSettings) => void;
@@ -1681,6 +1696,8 @@ function SettingsPage({
   accessToken: string;
   currentUser: UserDto;
   onSubmit: (e: FormEvent) => void;
+  theme: "dark" | "light";
+  onThemeChange: (t: "dark" | "light") => void;
 }) {
   const queryClient = useQueryClient();
   const t = useT();
@@ -1697,6 +1714,7 @@ function SettingsPage({
     { id: "profile",      label: t("set.profile"),      icon: <ShieldCheck size={15} /> },
     { id: "connectivity", label: t("set.connectivity"), icon: <RefreshCw size={15} /> },
     { id: "telegram",     label: t("set.telegram"),     icon: <Bell size={15} /> },
+    { id: "appearance",   label: t("set.appearance"),   icon: <Sun size={15} /> },
   ];
 
   return (
@@ -1848,6 +1866,37 @@ function SettingsPage({
 
         {/* Telegram */}
         <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
+
+        {/* Appearance */}
+        <div className="sp-settings-section">
+          <div className="sp-settings-section-head">
+            <div className="sp-section-head">
+              <span className="sp-section-head-label">
+                <span className="sp-section-head-code">03</span>{t("set.sectionAppearance")}
+              </span>
+            </div>
+          </div>
+          <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)" }}>
+            <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
+              {t("set.theme")}
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {(["dark", "light"] as const).map((th) => (
+                <button
+                  key={th}
+                  type="button"
+                  className="sp-filter-chip"
+                  style={theme === th
+                    ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
+                    : {}}
+                  onClick={() => onThemeChange(th)}
+                >
+                  {th === "dark" ? t("set.themeDark") : t("set.themeLight")}
+                </button>
+              ))}
+            </div>
+          </div>
+        </div>
       </div>
     </div>
   );

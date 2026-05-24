@@ -113,6 +113,12 @@ const translations = {
     "set.linkedSuccess": "Telegram linked successfully!",
     "set.generateCode": "Generate link code",
     "set.disconnect": "Disconnect Telegram",
+    // Appearance
+    "set.appearance": "Appearance",
+    "set.sectionAppearance": "APPEARANCE",
+    "set.theme": "THEME",
+    "set.themeDark": "DARK",
+    "set.themeLight": "LIGHT",
     // Misc
     "misc.copy": "Copy",
   },
@@ -228,6 +234,12 @@ const translations = {
     "set.linkedSuccess": "Telegram успішно підключено!",
     "set.generateCode": "Згенерувати код",
     "set.disconnect": "Відключити Telegram",
+    // Appearance
+    "set.appearance": "Вигляд",
+    "set.sectionAppearance": "ВИГЛЯД",
+    "set.theme": "ТЕМА",
+    "set.themeDark": "ТЕМНА",
+    "set.themeLight": "СВІТЛА",
     // Misc
     "misc.copy": "Копіювати",
   },
