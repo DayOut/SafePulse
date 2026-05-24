@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
+  Activity,
   Bell,
   CheckCircle2,
   Copy,
@@ -10,9 +11,11 @@ import {
   RefreshCw,
   Save,
   Send,
+  Settings,
   ShieldAlert,
   ShieldCheck,
   Trash2,
+  Users,
   X,
 } from "lucide-react";
 import { createContext, FormEvent, useContext, useEffect, useMemo, useRef, useState } from "react";
@@ -305,98 +308,94 @@ export default function App() {
 
   return (
     <LanguageContext.Provider value={lang}>
-    <main>
-      {/* ── Top bar ── */}
-      <header className="sp-topbar">
-        <div className="sp-topbar-brand">
-          <span className="sp-topbar-logo">
-            <span style={{ width: 8, height: 8, background: "var(--sp-safe)" }} className="sp-pulse" />
-          </span>
-          <div className="sp-topbar-name">
-            <span className="sp-topbar-title">SafePulse</span>
-            <span className="sp-topbar-sub">{session.User.UserName}</span>
-          </div>
+      <DesktopLeftRail activeTab={activeTab} onTabChange={setActiveTab} />
+      <main className="sp-main">
+        {/* ── Header stack: topbar + mobile tab bar (sticky together) ── */}
+        <div className="sp-header-stack">
+          <header className="sp-topbar">
+            <div className="sp-topbar-brand">
+              <span className="sp-topbar-logo">
+                <span style={{ width: 8, height: 8, background: "var(--sp-safe)" }} className="sp-pulse" />
+              </span>
+              <div className="sp-topbar-name">
+                <span className="sp-topbar-title">SafePulse</span>
+                <span className="sp-topbar-sub">{session.User.UserName}</span>
+              </div>
+            </div>
+            <div className="sp-topbar-actions">
+              <span className={`sp-conn-pill sp-conn-pill--${connClass}`}>
+                <span className="sp-conn-dot sp-pulse" />
+                {connLabel}
+              </span>
+              <button className="sp-icon-btn" onClick={() => logoutMutation.mutate()} title="Logout" type="button">
+                <LogOut size={15} />
+              </button>
+            </div>
+          </header>
+          <MobileTabBar activeTab={activeTab} onTabChange={setActiveTab} />
         </div>
-        <div className="sp-topbar-actions">
-          <span className={`sp-conn-pill sp-conn-pill--${connClass}`}>
-            <span className="sp-conn-dot sp-pulse" />
-            {connLabel}
-          </span>
-          <nav className="sp-tab-nav">
-            <button className={`sp-tab-btn ${activeTab === "overview" ? "active" : ""}`}
-              onClick={() => setActiveTab("overview")} type="button">{i18nT("nav.ops", lang)}</button>
-            <button className={`sp-tab-btn ${activeTab === "groups" ? "active" : ""}`}
-              onClick={() => setActiveTab("groups")} type="button">{i18nT("nav.groups", lang)}</button>
-            <button className={`sp-tab-btn ${activeTab === "settings" ? "active" : ""}`}
-              onClick={() => setActiveTab("settings")} type="button">{i18nT("nav.settings", lang)}</button>
-          </nav>
-          <button className="sp-icon-btn" onClick={() => logoutMutation.mutate()} title="Logout" type="button">
-            <LogOut size={15} />
-          </button>
+
+        {/* ── Page content ── */}
+        <div className="app-content">
+          {activeTab === "overview" && (
+            <OverviewPage
+              groups={myGroups.data ?? []}
+              isLoading={myGroups.isLoading}
+              onRefresh={() => void myGroups.refetch()}
+              activeStatus={activeStatus}
+              recentStatusChanges={recentStatusChanges}
+              onRequestAllStatus={() => {
+                for (const g of myGroups.data ?? [])
+                  void requestGroupStatusUpdate(settings, session.AccessToken, g.Id);
+              }}
+              onGroupClick={(groupId) => {
+                setRequestedGroupId(groupId);
+                setActiveTab("groups");
+              }}
+            />
+          )}
+          {activeTab === "groups" && (
+            <GroupsPage
+              settings={settings}
+              accessToken={session.AccessToken}
+              currentUserId={session.User.Id}
+              initialSelectedGroupId={initialGroupId}
+              openGroupId={requestedGroupId}
+              onJoined={async () => {
+                if (statusConnectionRef.current?.state === "Connected")
+                  await statusConnectionRef.current.invoke("JoinUserGroups");
+              }}
+            />
+          )}
+          {activeTab === "settings" && (
+            <SettingsPage
+              draftSettings={draftSettings}
+              setDraftSettings={setDraftSettings}
+              settings={settings}
+              accessToken={session.AccessToken}
+              currentUser={currentUser.data ?? session.User}
+              onSubmit={persistSettings}
+            />
+          )}
         </div>
-      </header>
 
-      {/* ── Page content ── */}
-      <div className="app-content">
-        {activeTab === "overview" && (
-          <OverviewPage
-            groups={myGroups.data ?? []}
-            isLoading={myGroups.isLoading}
-            onRefresh={() => void myGroups.refetch()}
-            activeStatus={activeStatus}
-            recentStatusChanges={recentStatusChanges}
-            onRequestAllStatus={() => {
-              for (const g of myGroups.data ?? [])
-                void requestGroupStatusUpdate(settings, session.AccessToken, g.Id);
-            }}
-            onGroupClick={(groupId) => {
-              setRequestedGroupId(groupId);
-              setActiveTab("groups");
-            }}
-          />
-        )}
-        {activeTab === "groups" && (
-          <GroupsPage
-            settings={settings}
-            accessToken={session.AccessToken}
-            currentUserId={session.User.Id}
-            initialSelectedGroupId={initialGroupId}
-            openGroupId={requestedGroupId}
-            onJoined={async () => {
-              if (statusConnectionRef.current?.state === "Connected")
-                await statusConnectionRef.current.invoke("JoinUserGroups");
-            }}
-          />
-        )}
-        {activeTab === "settings" && (
-          <SettingsPage
-            draftSettings={draftSettings}
-            setDraftSettings={setDraftSettings}
-            settings={settings}
-            accessToken={session.AccessToken}
-            currentUser={currentUser.data ?? session.User}
-            onSubmit={persistSettings}
-          />
-        )}
-      </div>
+        {/* ── Floating status cluster ── */}
+        <FloatingStatusCluster
+          activeStatus={activeStatus}
+          isUpdating={statusMutation.isPending}
+          onUpdateStatus={(status) => {
+            if (status === "NeedHelp" && !window.confirm(i18nT("grp.confirmNeedHelp", lang))) return;
+            statusMutation.mutate(status);
+          }}
+          error={statusMutation.error?.message ?? currentUser.error?.message}
+        />
 
-      {/* ── Floating status cluster ── */}
-      <FloatingStatusCluster
-        activeStatus={activeStatus}
-        isUpdating={statusMutation.isPending}
-        onUpdateStatus={(status) => {
-          if (status === "NeedHelp" && !window.confirm(i18nT("grp.confirmNeedHelp", lang))) return;
-          statusMutation.mutate(status);
-        }}
-        error={statusMutation.error?.message ?? currentUser.error?.message}
-      />
-
-      {/* ── Toasts ── */}
-      {statusRequest && (
-        <StatusRequestToast request={statusRequest} onDismiss={() => setStatusRequest(null)} />
-      )}
-      {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
-    </main>
+        {/* ── Toasts ── */}
+        {statusRequest && (
+          <StatusRequestToast request={statusRequest} onDismiss={() => setStatusRequest(null)} />
+        )}
+        {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
+      </main>
     </LanguageContext.Provider>
   );
 }
@@ -540,8 +539,10 @@ function FloatingStatusCluster({
       <div className="sp-cluster">
         <ClusterBtn status="Safe" active={activeStatus === "Safe"} disabled={isUpdating}
           onClick={() => onUpdateStatus("Safe")} />
+        <span className="sp-cluster-divider" />
         <ClusterBtn status="InShelter" active={activeStatus === "InShelter"} disabled={isUpdating}
           onClick={() => onUpdateStatus("InShelter")} />
+        <span className="sp-cluster-divider" />
         <ClusterBtn status="NeedHelp" active={activeStatus === "NeedHelp"} disabled={isUpdating}
           onClick={() => onUpdateStatus("NeedHelp")} sos />
       </div>
@@ -567,21 +568,84 @@ function ClusterBtn({
   const lang = useContext(LanguageContext);
 
   return (
-    <div className="sp-cluster-btn-wrap">
-      <button
-        className={`sp-cluster-btn sp-cluster-btn--${key} ${active ? "active" : ""} ${sos ? "sp-pulse-ring" : ""}`}
-        disabled={disabled}
-        onClick={onClick}
-        type="button"
-        title={statusLabel(status, lang)}
-      >
-        <Icon size={sos ? 28 : 22} strokeWidth={1.6} />
-        {sos && <span className="sp-cluster-sos-badge">SOS</span>}
-      </button>
-      <span className={`sp-cluster-label sp-cluster-label--${key}`}>
-        {statusShort(status, lang)}
+    <button
+      className={`sp-cluster-btn sp-cluster-btn--${key} ${active ? "active" : ""}`}
+      disabled={disabled}
+      onClick={onClick}
+      type="button"
+      title={statusLabel(status, lang)}
+    >
+      <span className={`sp-cluster-btn-icon${sos ? " sp-cluster-btn-icon--sos" : ""}`}>
+        <Icon size={16} strokeWidth={1.6} />
       </span>
-    </div>
+      <span className="sp-cluster-btn-label">{statusShort(status, lang)}</span>
+      {active && <span className="sp-cluster-active-dot" />}
+    </button>
+  );
+}
+
+// ── Mobile tab bar ─────────────────────────────────────────────────
+function MobileTabBar({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab: Tab;
+  onTabChange: (tab: Tab) => void;
+}) {
+  const lang = useContext(LanguageContext);
+  return (
+    <nav className="sp-mobile-tabbar">
+      <button className={`sp-mobile-tab ${activeTab === "overview" ? "active" : ""}`}
+        onClick={() => onTabChange("overview")} type="button">
+        <Activity size={14} strokeWidth={1.6} />
+        <span className="sp-mobile-tab-label">{i18nT("nav.ops", lang)}</span>
+      </button>
+      <button className={`sp-mobile-tab ${activeTab === "groups" ? "active" : ""}`}
+        onClick={() => onTabChange("groups")} type="button">
+        <Users size={14} strokeWidth={1.6} />
+        <span className="sp-mobile-tab-label">{i18nT("nav.groups", lang)}</span>
+      </button>
+      <button className={`sp-mobile-tab ${activeTab === "settings" ? "active" : ""}`}
+        onClick={() => onTabChange("settings")} type="button">
+        <Settings size={14} strokeWidth={1.6} />
+        <span className="sp-mobile-tab-label">{i18nT("nav.settings", lang)}</span>
+      </button>
+    </nav>
+  );
+}
+
+// ── Desktop left rail ──────────────────────────────────────────────
+function DesktopLeftRail({
+  activeTab,
+  onTabChange,
+}: {
+  activeTab: Tab;
+  onTabChange: (tab: Tab) => void;
+}) {
+  const lang = useContext(LanguageContext);
+  const tabs = [
+    { id: "overview" as Tab, icon: <Activity size={18} strokeWidth={1.6} />, label: i18nT("nav.ops", lang) },
+    { id: "groups"   as Tab, icon: <Users    size={18} strokeWidth={1.6} />, label: i18nT("nav.groups", lang) },
+    { id: "settings" as Tab, icon: <Settings size={18} strokeWidth={1.6} />, label: i18nT("nav.settings", lang) },
+  ];
+  return (
+    <aside className="sp-desktop-rail">
+      <div className="sp-desktop-rail-logo">
+        <span className="sp-pulse" style={{ width: 10, height: 10, background: "var(--sp-safe)", display: "block" }} />
+      </div>
+      {tabs.map((tab) => (
+        <button
+          key={tab.id}
+          className={`sp-desktop-rail-item ${activeTab === tab.id ? "active" : ""}`}
+          onClick={() => onTabChange(tab.id)}
+          type="button"
+          title={tab.label}
+        >
+          {tab.icon}
+          <span className="sp-desktop-rail-label">{tab.label}</span>
+        </button>
+      ))}
+    </aside>
   );
 }
 
