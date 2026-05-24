@@ -17,6 +17,11 @@ export type AuthSession = {
   User: UserDto;
 };
 
+export type RegistrationPendingResponse = {
+  Email: string;
+  RequiresEmailVerification: true;
+};
+
 export type UserDto = {
   Id: string;
   UserName: string;
@@ -150,13 +155,20 @@ async function request<T>(
 }
 
 export function registerWithPassword(settings: AppSettings, email: string, userName: string, password: string) {
-  return request<AuthSession>(settings, "/api/auth/register", null, {
+  return request<RegistrationPendingResponse>(settings, "/api/auth/register", null, {
     method: "POST",
     body: JSON.stringify({
       Email: email,
       UserName: userName,
       Password: password,
     }),
+  });
+}
+
+export function resendVerificationEmail(settings: AppSettings, email: string) {
+  return request<void>(settings, "/api/auth/email-verification/resend", null, {
+    method: "POST",
+    body: JSON.stringify({ Email: email }),
   });
 }
 

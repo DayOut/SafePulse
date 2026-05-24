@@ -25,7 +25,7 @@ public class AuthService(
     private readonly TelegramOptions _telegram = telegramOptions.Value;
     private readonly IMongoCollection<RefreshSession> _refreshSessions = mongoDatabase.GetCollection<RefreshSession>("refreshSessions");
 
-    public async Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> RegisterWithPasswordAsync(
+    public async Task<AppUser> RegisterWithPasswordAsync(
         string email,
         string userName,
         string password,
@@ -35,9 +35,18 @@ public class AuthService(
         var trimmedUserName = userName.Trim();
         ValidatePasswordAuthInput(normalizedEmail, trimmedUserName, password);
 
-        var exists = await db.Users.AnyAsync(u => u.NormalizedEmail == normalizedEmail && u.IsDeleted != true, ct);
-        if (exists)
-            throw new InvalidOperationException("Email is already registered");
+        var existing = await db.Users.FirstOrDefaultAsync(
+            u => u.NormalizedEmail == normalizedEmail && u.IsDeleted != true, ct);
+
+        if (existing is not null)
+        {
+            // Already verified — conflict
+            if (existing.EmailVerifiedAt.HasValue)
+                throw new InvalidOperationException("Email is already registered");
+
+            // Unverified duplicate — caller will resend verification
+            return existing;
+        }
 
         var now = DateTime.UtcNow;
         var user = new AppUser
@@ -58,10 +67,9 @@ public class AuthService(
         };
 
         ApplyEmailAdminRole(user);
-
         await db.Users.AddAsync(user, ct);
         await db.SaveChangesAsync(ct);
-        return await IssueSessionAsync(user, ct);
+        return user;
     }
 
     public async Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> LoginWithPasswordAsync(
@@ -73,6 +81,9 @@ public class AuthService(
         var user = await db.Users.FirstOrDefaultAsync(u => u.NormalizedEmail == normalizedEmail && u.IsDeleted != true, ct);
         if (user is null || string.IsNullOrWhiteSpace(user.PasswordHash) || !VerifyPassword(password, user.PasswordHash))
             throw new UnauthorizedAccessException("Invalid email or password");
+
+        if (!user.EmailVerifiedAt.HasValue)
+            throw new InvalidOperationException("Email verification required");
 
         user.LastSeenOnlineAt = DateTime.UtcNow;
         user.UpdatedAt = DateTime.UtcNow;
@@ -129,6 +140,9 @@ public class AuthService(
         var (accessToken, expiresAt) = CreateAccessToken(user);
         return (user, accessToken, expiresAt, rawRefreshToken);
     }
+
+    public Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> IssueSessionForVerifiedUserAsync(
+        AppUser user, CancellationToken ct) => IssueSessionAsync(user, ct);
 
     public async Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken ct)
     {

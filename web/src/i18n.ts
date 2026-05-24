@@ -119,6 +119,15 @@ const translations = {
     "set.theme": "THEME",
     "set.themeDark": "DARK",
     "set.themeLight": "LIGHT",
+    // Email verification
+    "auth.checkEmail": "Check your email",
+    "auth.checkEmailDesc": "We sent a verification link to {email}. Click it to activate your account.",
+    "auth.resendEmail": "RESEND EMAIL",
+    "auth.resendSent": "Verification email resent.",
+    "auth.emailVerified": "Email verified! You can now log in.",
+    "auth.emailVerifyError": "Verification link is invalid or expired.",
+    "auth.verificationRequired": "Please verify your email before logging in.",
+    "auth.backToLogin": "BACK TO LOGIN",
     // Misc
     "misc.copy": "Copy",
   },
@@ -240,6 +249,15 @@ const translations = {
     "set.theme": "ТЕМА",
     "set.themeDark": "ТЕМНА",
     "set.themeLight": "СВІТЛА",
+    // Email verification
+    "auth.checkEmail": "Перевірте пошту",
+    "auth.checkEmailDesc": "Ми надіслали посилання для підтвердження на {email}. Натисніть його, щоб активувати акаунт.",
+    "auth.resendEmail": "НАДІСЛАТИ ПОВТОРНО",
+    "auth.resendSent": "Лист підтвердження надіслано повторно.",
+    "auth.emailVerified": "Email підтверджено! Тепер ви можете увійти.",
+    "auth.emailVerifyError": "Посилання для підтвердження недійсне або застаріло.",
+    "auth.verificationRequired": "Підтвердіть email перед входом.",
+    "auth.backToLogin": "НАЗАД ДО ВХОДУ",
     // Misc
     "misc.copy": "Копіювати",
   },

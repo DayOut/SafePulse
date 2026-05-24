@@ -14,6 +14,7 @@ public class AuthController(
     IAuthService authService,
     IUserService userService,
     ITelegramLinkService telegramLinkService,
+    IEmailVerificationService emailVerificationService,
     IOptions<AuthOptions> authOptions) : ControllerBase
 {
     private const string RefreshCookieName = "safepulse_refresh";
@@ -21,13 +22,13 @@ public class AuthController(
 
     [AllowAnonymous]
     [HttpPost("register")]
-    public async Task<ActionResult<AuthResponse>> Register([FromBody] RegisterRequest request, CancellationToken ct)
+    public async Task<ActionResult<RegistrationPendingResponse>> Register([FromBody] RegisterRequest request, CancellationToken ct)
     {
         try
         {
-            var session = await authService.RegisterWithPasswordAsync(request.Email, request.UserName, request.Password, ct);
-            SetRefreshCookie(session.RefreshToken);
-            return Ok(ToAuthResponse(session.User, session.AccessToken, session.AccessTokenExpiresAt));
+            var user = await authService.RegisterWithPasswordAsync(request.Email, request.UserName, request.Password, ct);
+            await emailVerificationService.SendVerificationEmailAsync(user, ct);
+            return Accepted(new RegistrationPendingResponse { Email = user.Email! });
         }
         catch (ArgumentException ex)
         {
@@ -53,6 +54,31 @@ public class AuthController(
         {
             return Unauthorized(ex.Message);
         }
+        catch (InvalidOperationException ex) when (ex.Message == "Email verification required")
+        {
+            return StatusCode(403, ex.Message);
+        }
+    }
+
+    [AllowAnonymous]
+    [HttpGet("verify-email")]
+    public async Task<IActionResult> VerifyEmail([FromQuery] string token, CancellationToken ct)
+    {
+        var user = await emailVerificationService.VerifyTokenAsync(token, ct);
+        if (user is null)
+            return Redirect("/?emailVerifyError=1");
+
+        var session = await authService.IssueSessionForVerifiedUserAsync(user, ct);
+        SetRefreshCookie(session.RefreshToken);
+        return Redirect("/?emailVerified=1");
+    }
+
+    [AllowAnonymous]
+    [HttpPost("email-verification/resend")]
+    public async Task<IActionResult> ResendVerification([FromBody] ResendVerificationRequest request, CancellationToken ct)
+    {
+        await emailVerificationService.ResendVerificationEmailAsync(request.Email, ct);
+        return Accepted();
     }
 
     [AllowAnonymous]

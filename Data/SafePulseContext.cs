@@ -15,6 +15,7 @@ public class SafePulseContext : DbContext
     public DbSet<RefreshSession> RefreshSessions => Set<RefreshSession>();
     public DbSet<TelegramLinkCode> TelegramLinkCodes => Set<TelegramLinkCode>();
     public DbSet<GroupStatusRequest> GroupStatusRequests => Set<GroupStatusRequest>();
+    public DbSet<EmailVerificationToken> EmailVerificationTokens => Set<EmailVerificationToken>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -26,5 +27,6 @@ public class SafePulseContext : DbContext
         modelBuilder.Entity<RefreshSession>().ToCollection("refreshSessions");
         modelBuilder.Entity<TelegramLinkCode>().ToCollection("telegramLinkCodes");
         modelBuilder.Entity<GroupStatusRequest>().ToCollection("groupStatusRequests");
+        modelBuilder.Entity<EmailVerificationToken>().ToCollection("emailVerificationTokens");
     }
 }

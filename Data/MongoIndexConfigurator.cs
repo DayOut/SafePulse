@@ -17,6 +17,7 @@ public static class MongoIndexConfigurator
         await ConfigureTelegramLinkCodeIndexesAsync(db);
         await ConfigureGroupStatusRequestIndexesAsync(db);
         await ConfigureTelegramStatusMessageIndexesAsync(db);
+        await ConfigureEmailVerificationTokenIndexesAsync(db);
     }
 
     private static async Task ConfigureUserIndexesAsync(IMongoDatabase db)
@@ -69,6 +70,27 @@ public static class MongoIndexConfigurator
                 })
         };
 
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureEmailVerificationTokenIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<EmailVerificationToken>("emailVerificationTokens");
+        var indexes = new List<CreateIndexModel<EmailVerificationToken>>
+        {
+            new(
+                Builders<EmailVerificationToken>.IndexKeys.Ascending(x => x.TokenHash),
+                new CreateIndexOptions { Unique = true, Name = "idx_emailVerificationTokens_tokenHash_unique" }),
+            new(
+                Builders<EmailVerificationToken>.IndexKeys.Ascending(x => x.UserId),
+                new CreateIndexOptions { Name = "idx_emailVerificationTokens_userId" }),
+            new(
+                Builders<EmailVerificationToken>.IndexKeys.Ascending(x => x.NormalizedEmail),
+                new CreateIndexOptions { Name = "idx_emailVerificationTokens_normalizedEmail" }),
+            new(
+                Builders<EmailVerificationToken>.IndexKeys.Ascending(x => x.ExpiresAt),
+                new CreateIndexOptions { Name = "idx_emailVerificationTokens_expiresAt" }),
+        };
         await collection.Indexes.CreateManyAsync(indexes);
     }
 

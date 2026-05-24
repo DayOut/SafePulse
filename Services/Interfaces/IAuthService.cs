@@ -5,7 +5,7 @@ namespace HeartPulse.Services.Interfaces;
 
 public interface IAuthService
 {
-    Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> RegisterWithPasswordAsync(
+    Task<AppUser> RegisterWithPasswordAsync(
         string email,
         string userName,
         string password,
@@ -25,6 +25,10 @@ public interface IAuthService
         CancellationToken ct);
 
     Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken ct);
+
+    Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> IssueSessionForVerifiedUserAsync(
+        AppUser user,
+        CancellationToken ct);
 
     Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> DevLoginAsync(
         string userId,

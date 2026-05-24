@@ -818,6 +818,25 @@ input, textarea, select {
   font-family: var(--sp-mono);
 }
 
+.sp-info-box {
+  padding: 12px 14px;
+  border: 1px solid var(--sp-border);
+  background: var(--sp-raised);
+  color: var(--sp-fg-1);
+  font-size: 13px;
+  font-family: var(--sp-sans);
+  border-radius: 2px;
+}
+
+.sp-success-box {
+  padding: 10px 12px;
+  border: 1px solid oklch(0.72 0.17 145 / 0.5);
+  background: oklch(0.72 0.17 145 / 0.08);
+  color: var(--sp-safe);
+  font-size: 12px;
+  font-family: var(--sp-mono);
+}
+
 /* ============================================================
    Section / page layout
    ============================================================ */

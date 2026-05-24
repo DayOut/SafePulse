@@ -52,6 +52,17 @@ public class AuthResponse
     public UserDto User { get; set; } = default!;
 }
 
+public class RegistrationPendingResponse
+{
+    public string Email { get; set; } = default!;
+    public bool RequiresEmailVerification => true;
+}
+
+public class ResendVerificationRequest
+{
+    public string Email { get; set; } = default!;
+}
+
 public class TelegramLinkCodeDto
 {
     public string Id { get; set; } = default!;

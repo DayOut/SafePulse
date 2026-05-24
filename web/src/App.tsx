@@ -29,6 +29,7 @@ import {
   GroupStatusRequestedDto,
   GroupMemberDto,
   MyGroupDto,
+  RegistrationPendingResponse,
   StatusChangedDto,
   UserDto,
   UserStatus,
@@ -46,6 +47,7 @@ import {
   loginWithPassword,
   logout,
   registerWithPassword,
+  resendVerificationEmail,
   refreshSession,
   removeGroupMember,
   requestGroupStatusUpdate,
@@ -123,7 +125,22 @@ export default function App() {
   const [statusRequest, setStatusRequest] = useState<GroupStatusRequestedDto | null>(null);
   const [statusChangedMessage, setStatusChangedMessage] = useState<string | null>(null);
   const [recentStatusChanges, setRecentStatusChanges] = useState<StatusChangedDto[]>([]);
+  const [emailVerifiedToast, setEmailVerifiedToast] = useState(false);
   const statusConnectionRef = useRef<HubConnection | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.has("emailVerified")) {
+      window.history.replaceState({}, "", window.location.pathname);
+      setEmailVerifiedToast(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!emailVerifiedToast) return;
+    const t = window.setTimeout(() => setEmailVerifiedToast(false), 5000);
+    return () => window.clearTimeout(t);
+  }, [emailVerifiedToast]);
 
   useEffect(() => {
     let cancelled = false;
@@ -184,13 +201,18 @@ export default function App() {
     },
   });
 
+  const [pendingVerificationEmail, setPendingVerificationEmail] = useState<string | null>(null);
+
   const registerMutation = useMutation({
     mutationFn: (payload: { email: string; userName: string; password: string }) =>
       registerWithPassword(settings, payload.email, payload.userName, payload.password),
-    onSuccess: (nextSession) => {
-      setSession(nextSession);
-      void queryClient.invalidateQueries();
+    onSuccess: (result: RegistrationPendingResponse) => {
+      setPendingVerificationEmail(result.Email);
     },
+  });
+
+  const resendMutation = useMutation({
+    mutationFn: (email: string) => resendVerificationEmail(settings, email),
   });
 
 
@@ -308,8 +330,15 @@ export default function App() {
       <LoginPage
         onLogin={(payload) => passwordLoginMutation.mutate(payload)}
         onRegister={(payload) => registerMutation.mutate(payload)}
-        error={passwordLoginMutation.error?.message ?? registerMutation.error?.message}
+        onResendVerification={(email) => resendMutation.mutate(email)}
+        loginError={passwordLoginMutation.error?.message}
+        registerError={registerMutation.error?.message}
+        resendSent={resendMutation.isSuccess}
         isLoading={passwordLoginMutation.isPending || registerMutation.isPending}
+        pendingVerificationEmail={pendingVerificationEmail}
+        onBackToLogin={() => { setPendingVerificationEmail(null); registerMutation.reset(); resendMutation.reset(); }}
+        emailVerifiedToast={emailVerifiedToast}
+        emailVerifyError={new URLSearchParams(window.location.search).has("emailVerifyError")}
       />
     );
   }
@@ -414,6 +443,7 @@ export default function App() {
           <StatusRequestToast request={statusRequest} onDismiss={() => setStatusRequest(null)} />
         )}
         {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
+        {emailVerifiedToast && <StatusChangedToast message={i18nT("auth.emailVerified", lang)} />}
       </main>
     </LanguageContext.Provider>
   );
@@ -423,13 +453,27 @@ export default function App() {
 function LoginPage({
   onLogin,
   onRegister,
-  error,
+  onResendVerification,
+  loginError,
+  registerError,
+  resendSent,
   isLoading,
+  pendingVerificationEmail,
+  onBackToLogin,
+  emailVerifiedToast,
+  emailVerifyError,
 }: {
   onLogin: (p: { email: string; password: string }) => void;
   onRegister: (p: { email: string; userName: string; password: string }) => void;
-  error?: string;
+  onResendVerification: (email: string) => void;
+  loginError?: string;
+  registerError?: string;
+  resendSent: boolean;
   isLoading: boolean;
+  pendingVerificationEmail: string | null;
+  onBackToLogin: () => void;
+  emailVerifiedToast: boolean;
+  emailVerifyError: boolean;
 }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -437,6 +481,11 @@ function LoginPage({
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [localError, setLocalError] = useState<string | null>(null);
+
+  function switchMode(next: "login" | "register") {
+    setMode(next);
+    setLocalError(null);
+  }
 
   function submitAuth(event: FormEvent) {
     event.preventDefault();
@@ -449,26 +498,64 @@ function LoginPage({
     onRegister({ email, userName, password });
   }
 
+  const brand = (
+    <div className="sp-login-brand">
+      <span className="sp-login-logo sp-brackets">
+        <span style={{ width: 18, height: 18, background: "var(--sp-safe)" }} className="sp-pulse" />
+      </span>
+      <div className="sp-login-title">
+        <h1>SafePulse</h1>
+        <p>Volunteer · safety · network</p>
+      </div>
+    </div>
+  );
+
+  // "Check your email" screen shown after successful registration
+  if (pendingVerificationEmail) {
+    return (
+      <div className="sp-login-wrap">
+        <div className="sp-login-panel">
+          {brand}
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            <div className="sp-info-box">
+              <p style={{ fontWeight: 600, marginBottom: 6 }}>{i18nT("auth.checkEmail", "en")}</p>
+              <p style={{ opacity: 0.7, fontSize: 13 }}>
+                {i18nT("auth.checkEmailDesc", "en").replace("{email}", pendingVerificationEmail)}
+              </p>
+            </div>
+            {resendSent && <div className="sp-success-box">{i18nT("auth.resendSent", "en")}</div>}
+            <button className="sp-btn-secondary" type="button"
+              onClick={() => onResendVerification(pendingVerificationEmail)} disabled={isLoading}>
+              {i18nT("auth.resendEmail", "en")}
+            </button>
+            <button className="sp-btn-ghost" type="button" onClick={onBackToLogin}>
+              {i18nT("auth.backToLogin", "en")}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  const verifyFailed = loginError?.toLowerCase().includes("verification") || emailVerifyError;
+
   return (
     <div className="sp-login-wrap">
       <div className="sp-login-panel">
-        {/* Brand */}
-        <div className="sp-login-brand">
-          <span className="sp-login-logo sp-brackets">
-            <span style={{ width: 18, height: 18, background: "var(--sp-safe)" }} className="sp-pulse" />
-          </span>
-          <div className="sp-login-title">
-            <h1>SafePulse</h1>
-            <p>Volunteer · safety · network</p>
-          </div>
-        </div>
+        {brand}
 
-        {/* Auth form */}
+        {emailVerifiedToast && (
+          <div className="sp-success-box">{i18nT("auth.emailVerified", "en")}</div>
+        )}
+        {emailVerifyError && (
+          <div className="sp-error-box">! {i18nT("auth.emailVerifyError", "en")}</div>
+        )}
+
         <div className="sp-auth-tabs">
           <button className={`sp-auth-tab ${mode === "login" ? "active" : ""}`}
-            onClick={() => setMode("login")} type="button">Login</button>
+            onClick={() => switchMode("login")} type="button">Login</button>
           <button className={`sp-auth-tab ${mode === "register" ? "active" : ""}`}
-            onClick={() => setMode("register")} type="button">Register</button>
+            onClick={() => switchMode("register")} type="button">Register</button>
         </div>
 
         <form style={{ display: "flex", flexDirection: "column", gap: 14 }} onSubmit={submitAuth}>
@@ -491,7 +578,20 @@ function LoginPage({
           </button>
         </form>
 
-        {(localError || error) && <div className="sp-error-box">! {localError ?? error}</div>}
+        {(localError || (mode === "login" ? loginError : registerError)) && !verifyFailed && (
+          <div className="sp-error-box">! {localError ?? (mode === "login" ? loginError : registerError)}</div>
+        )}
+
+        {verifyFailed && mode === "login" && (
+          <div className="sp-error-box" style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <span>! {i18nT("auth.verificationRequired", "en")}</span>
+            <button className="sp-btn-ghost" type="button" style={{ fontSize: 11 }}
+              onClick={() => { if (email) onResendVerification(email); }}>
+              {i18nT("auth.resendEmail", "en")}
+            </button>
+            {resendSent && <span style={{ color: "var(--sp-safe)", fontSize: 11 }}>{i18nT("auth.resendSent", "en")}</span>}
+          </div>
+        )}
       </div>
     </div>
   );

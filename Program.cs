@@ -43,6 +43,8 @@ builder.Services.Configure<TelegramOptions>(builder.Configuration.GetSection("Te
 builder.Services.Configure<AuthOptions>(builder.Configuration.GetSection("Auth"));
 builder.Services.Configure<FakeStatusSimulatorOptions>(builder.Configuration.GetSection("FakeStatusSimulator"));
 builder.Services.Configure<AppOptions>(builder.Configuration.GetSection("App"));
+builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
+builder.Services.Configure<EmailVerificationOptions>(builder.Configuration.GetSection("EmailVerification"));
 
 var mongoConn = builder.Configuration.GetValue<string>("Mongo:ConnectionString")!;
 var mongoDb = builder.Configuration.GetValue<string>("Mongo:Database") ?? "safepulse";
@@ -118,6 +120,8 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
 });
 
 var services = builder.Services;
+services.AddScoped<IEmailSender, MailKitEmailSender>();
+services.AddScoped<IEmailVerificationService, EmailVerificationService>();
 services.AddScoped<IUserService, UserService>();
 services.AddScoped<IUserStatusService, UserStatusService>();
 services.AddScoped<IGroupService, GroupService>();
