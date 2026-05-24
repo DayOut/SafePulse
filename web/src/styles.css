@@ -518,7 +518,7 @@ input, textarea, select {
   top: 5px; right: 5px;
   width: 8px; height: 8px;
   border-radius: 50%;
-  animation: sp-pulse 0.45s ease-in-out infinite;
+  animation: sp-pulse 2.5s ease-in-out infinite;
 }
 .sp-cluster-btn--safe    .sp-cluster-active-dot { background: var(--sp-safe); }
 .sp-cluster-btn--shelter .sp-cluster-active-dot { background: var(--sp-shelter); }
@@ -991,6 +991,7 @@ input, textarea, select {
 }
 
 .sp-group-row-name {
+  font-family: var(--sp-mono);
   font-size: 14px;
   font-weight: 600;
   color: var(--sp-fg);
@@ -1102,6 +1103,7 @@ input, textarea, select {
 }
 
 .sp-group-header-name {
+  font-family: var(--sp-mono);
   font-size: 18px;
   font-weight: 700;
 }
@@ -1666,6 +1668,11 @@ input, textarea, select {
   font-family: var(--sp-mono);
   font-size: 11px;
   color: var(--sp-fg-2);
+}
+
+.sp-group-name {
+  font-family: var(--sp-mono);
+  font-weight: 600;
 }
 
 /* Visibility helpers */

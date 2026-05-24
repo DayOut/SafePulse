@@ -1058,7 +1058,7 @@ function GroupsPage({
                   </span>
                   <span className="sp-mono sp-tab" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>{group.Members.length}</span>
                 </div>
-                <span style={{ fontSize: 13, fontWeight: 600 }}>{group.Name}</span>
+                <span className="sp-group-name" style={{ fontSize: 13 }}>{group.Name}</span>
                 <div style={{ display: "flex", height: 3, background: "var(--sp-bg)", marginTop: 2 }}>
                   {bd.NeedHelp  > 0 && <div style={{ flex: bd.NeedHelp,  background: "var(--sp-help)" }} />}
                   {bd.Unknown   > 0 && <div style={{ flex: bd.Unknown,   background: "var(--sp-unknown)", opacity: 0.7 }} />}
@@ -2026,7 +2026,7 @@ function JoinGroupForm({
       {preview.data && (
         <div style={{ padding: 14, border: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
           <p className="sp-mono sp-up" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.12em" }}>GROUP</p>
-          <h3 style={{ fontSize: 18, fontWeight: 700, margin: "6px 0 4px" }}>{preview.data.GroupName}</h3>
+          <h3 className="sp-group-name" style={{ fontSize: 18, fontWeight: 700, margin: "6px 0 4px" }}>{preview.data.GroupName}</h3>
           <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", wordBreak: "break-all" }}>{preview.data.GroupId}</p>
           {preview.data.IsRevoked ? (
             <div className="sp-error-box" style={{ marginTop: 10 }}>This invite was revoked.</div>
@@ -2041,7 +2041,7 @@ function JoinGroupForm({
       {acceptMutation.error && <div className="sp-error-box">{acceptMutation.error.message}</div>}
       {acceptedGroupName && (
         <div style={{ padding: "10px 12px", border: "1px solid var(--sp-safe-dim)", background: "var(--sp-safe-bg)", color: "var(--sp-safe)", fontSize: 12 }}>
-          Joined {acceptedGroupName}.
+          Joined <span className="sp-group-name">{acceptedGroupName}</span>.
         </div>
       )}
     </div>
