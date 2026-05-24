@@ -435,10 +435,17 @@ function LoginPage({
   const [email, setEmail] = useState("");
   const [userName, setUserName] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
 
   function submitAuth(event: FormEvent) {
     event.preventDefault();
+    setLocalError(null);
     if (mode === "login") { onLogin({ email, password }); return; }
+    if (password !== confirmPassword) {
+      setLocalError("Passwords do not match.");
+      return;
+    }
     onRegister({ email, userName, password });
   }
 
@@ -474,8 +481,8 @@ function LoginPage({
           <SpField label="PASSWORD" type="password" placeholder="••••••••" value={password}
             onChange={setPassword} icon={<LockIcon />} />
           {mode === "register" && (
-            <SpField label="CONFIRM PASSWORD" type="password" placeholder="••••••••" value=""
-              onChange={() => {}} icon={<LockIcon />} />
+            <SpField label="CONFIRM PASSWORD" type="password" placeholder="••••••••" value={confirmPassword}
+              onChange={setConfirmPassword} icon={<LockIcon />} />
           )}
 
           <button className="sp-btn-primary" disabled={isLoading} type="submit">
@@ -484,7 +491,7 @@ function LoginPage({
           </button>
         </form>
 
-        {error && <div className="sp-error-box">! {error}</div>}
+        {(localError || error) && <div className="sp-error-box">! {localError ?? error}</div>}
       </div>
     </div>
   );
