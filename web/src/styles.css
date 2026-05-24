@@ -88,8 +88,27 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-button, input {
+button, input, textarea, select {
   font: inherit;
+}
+
+input, textarea, select {
+  font-size: 16px;
+}
+
+@media (hover: none) and (pointer: coarse) {
+  input,
+  textarea,
+  select,
+  .sp-field-input,
+  .sp-text-input {
+    font-size: 16px;
+  }
+
+  button,
+  [role="button"] {
+    touch-action: manipulation;
+  }
 }
 
 /* ============================================================
@@ -214,8 +233,27 @@ button, input {
 }
 
 @keyframes sp-cluster-unknown-flash {
-  0%, 100% { border-color: oklch(0.72 0.14 65); box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 10px oklch(0.72 0.14 65 / 0.45); }
-  50%       { border-color: var(--sp-border-hi); box-shadow: 0 12px 40px rgba(0,0,0,0.6); }
+  0%, 100% {
+    border-color: oklch(0.80 0.18 65);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6), 0 0 56px oklch(0.80 0.18 65 / 0.75), 0 0 112px oklch(0.80 0.18 65 / 0.35);
+  }
+  50% {
+    border-color: var(--sp-border-hi);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.6);
+  }
+}
+
+@keyframes sp-ring-pulse-safe {
+  0%   { box-shadow: 0 0 0 0   oklch(0.72 0.17 145 / 0.5); }
+  100% { box-shadow: 0 0 0 10px oklch(0.72 0.17 145 / 0); }
+}
+@keyframes sp-ring-pulse-shelter {
+  0%   { box-shadow: 0 0 0 0   oklch(0.72 0.13 215 / 0.5); }
+  100% { box-shadow: 0 0 0 10px oklch(0.72 0.13 215 / 0); }
+}
+@keyframes sp-ring-pulse-help {
+  0%   { box-shadow: 0 0 0 0   oklch(0.66 0.21 25 / 0.5); }
+  100% { box-shadow: 0 0 0 10px oklch(0.66 0.21 25 / 0); }
 }
 
 /* ============================================================
@@ -421,7 +459,7 @@ button, input {
   box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
   position: relative;
 }
-.sp-cluster--unknown { animation: sp-cluster-unknown-flash 1.2s ease-in-out infinite; }
+.sp-cluster--unknown { animation: sp-cluster-unknown-flash 0.42s ease-in-out infinite; }
 
 .sp-cluster::before,
 .sp-cluster::after {
@@ -476,26 +514,28 @@ button, input {
 
 .sp-cluster-active-dot {
   position: absolute;
-  top: 6px; right: 6px;
-  width: 5px; height: 5px;
-  background: var(--sp-fg);
+  top: 5px; right: 5px;
+  width: 8px; height: 8px;
   border-radius: 50%;
-  animation: sp-pulse 1.6s ease-in-out infinite;
+  animation: sp-pulse 0.45s ease-in-out infinite;
 }
+.sp-cluster-btn--safe    .sp-cluster-active-dot { background: var(--sp-safe); }
+.sp-cluster-btn--shelter .sp-cluster-active-dot { background: var(--sp-shelter); }
+.sp-cluster-btn--help    .sp-cluster-active-dot { background: var(--sp-help); }
 
 /* Safe — lime green */
 .sp-cluster-btn--safe                              { background: oklch(0.30 0.11 145); }
 .sp-cluster-btn--safe .sp-cluster-btn-icon         { border-color: var(--sp-safe); background: var(--sp-safe); color: #0a0a0a; }
 .sp-cluster-btn--safe .sp-cluster-btn-label        { color: var(--sp-safe); }
 .sp-cluster-btn--safe.active                       { background: oklch(0.40 0.15 145); box-shadow: inset 0 0 0 2px var(--sp-safe); }
-.sp-cluster-btn--safe.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.72 0.17 145 / 0.4); }
+.sp-cluster-btn--safe.active .sp-cluster-btn-icon  { animation: sp-ring-pulse-safe    1.4s ease-out infinite; }
 
 /* Shelter — cyan */
 .sp-cluster-btn--shelter                              { background: oklch(0.28 0.09 215); }
 .sp-cluster-btn--shelter .sp-cluster-btn-icon         { border-color: var(--sp-shelter); background: var(--sp-shelter); color: #0a0a0a; }
 .sp-cluster-btn--shelter .sp-cluster-btn-label        { color: var(--sp-shelter); }
 .sp-cluster-btn--shelter.active                       { background: oklch(0.38 0.13 215); box-shadow: inset 0 0 0 2px var(--sp-shelter); }
-.sp-cluster-btn--shelter.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.72 0.13 215 / 0.4); }
+.sp-cluster-btn--shelter.active .sp-cluster-btn-icon  { animation: sp-ring-pulse-shelter 1.4s ease-out infinite; }
 
 /* Help / SOS — orange-red */
 .sp-cluster-btn--help                              { background: oklch(0.34 0.14 25); }
@@ -507,7 +547,7 @@ button, input {
 }
 .sp-cluster-btn--help .sp-cluster-btn-label        { color: var(--sp-help); }
 .sp-cluster-btn--help.active                       { background: oklch(0.46 0.18 25); box-shadow: inset 0 0 0 2px var(--sp-help); }
-.sp-cluster-btn--help.active .sp-cluster-btn-icon  { box-shadow: 0 0 0 4px oklch(0.66 0.21 25 / 0.45); }
+.sp-cluster-btn--help.active .sp-cluster-btn-icon  { animation: sp-ring-pulse-help    1.4s ease-out infinite; }
 
 /* ============================================================
    Light theme component overrides

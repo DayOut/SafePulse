@@ -211,6 +211,14 @@ export default function App() {
       session.AccessToken,
       (rawMessage) => {
         const message = normalizeStatusChanged(rawMessage);
+        if (message.UserId === session.User.Id) {
+          queryClient.setQueryData<UserDto>(
+            ["current-user", settings, session.AccessToken],
+            (existing) => existing
+              ? { ...existing, Status: message.Status, LastActiveAt: message.LastActiveAt, LastSeenOnlineAt: message.LastSeenOnlineAt }
+              : existing,
+          );
+        }
         let shouldRefetchGroups = false;
         queryClient.setQueryData<MyGroupDto[]>(
           ["my-groups", settings, session.AccessToken],
