@@ -63,6 +63,18 @@ public class ResendVerificationRequest
     public string Email { get; set; } = default!;
 }
 
+public class SetPasswordRequest
+{
+    public string Email { get; set; } = default!;
+    public string Password { get; set; } = default!;
+}
+
+public class ChangePasswordRequest
+{
+    public string CurrentPassword { get; set; } = default!;
+    public string NewPassword { get; set; } = default!;
+}
+
 public class TelegramLinkCodeDto
 {
     public string Id { get; set; } = default!;

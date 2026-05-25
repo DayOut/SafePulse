@@ -2,6 +2,7 @@ using System.Text.RegularExpressions;
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
 using HeartPulse.Exceptions;
+using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Options;
@@ -23,7 +24,8 @@ namespace HeartPulse.Controllers;
 public class TelegramController(
     ITelegramBotClient bot,
     IUserService userService,
-    ITelegramCommandDispatcher dispatcher, 
+    ITelegramCommandDispatcher dispatcher,
+    ITelegramTextFormatter formatter,
     IOptions<TelegramOptions> opts,
     IAppLocalizer localizer,
     ILogger<TelegramController> logger)
@@ -31,22 +33,6 @@ public class TelegramController(
 {
     private const int MaxTelegramMessageLength = 3900;
     private readonly TelegramOptions _opts = opts.Value;
-
-    public static readonly ReplyKeyboardMarkup StatusKeyboard = BuildStatusKeyboard("uk");
-
-    public static ReplyKeyboardMarkup BuildStatusKeyboard(string? language)
-    {
-        var safe = language == "uk" ? "В безпеці" : "Safe";
-        var shelter = language == "uk" ? "В укритті" : "In shelter";
-        return new ReplyKeyboardMarkup(new[]
-        {
-            new KeyboardButton[] { safe, "SOS", shelter }
-        })
-        {
-            ResizeKeyboard = true,
-            OneTimeKeyboard = false
-        };
-    }
 
     private static readonly Regex MdV2EscapeRegex =
         new(@"([_*\[\]()~`>#+\-=|{}.!])", RegexOptions.Compiled);
@@ -97,7 +83,7 @@ public class TelegramController(
                     chatId,
                     chunk,
                     replyMarkup: result?.UseStatusKeyboard == true && index == chunks.Count - 1
-                        ? BuildStatusKeyboard(user.Language)
+                        ? formatter.BuildStatusKeyboard(user.Language)
                         : null,
                     cancellationToken: ct);
             }

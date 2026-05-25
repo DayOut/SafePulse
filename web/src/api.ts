@@ -11,6 +11,7 @@ export type AppConfig = {
   TelegramBotUsername: string;
   TelegramBotId: string | null;
   EnableDevLogin: boolean;
+  ServerStartTime: number;
 };
 
 export type AuthSession = {
@@ -246,6 +247,20 @@ export function getTelegramLinkStatus(settings: AppSettings, accessToken: string
 export function disconnectTelegram(settings: AppSettings, accessToken: string) {
   return request<UserDto>(settings, "/api/auth/telegram-link", accessToken, {
     method: "DELETE",
+  });
+}
+
+export function setPassword(settings: AppSettings, accessToken: string, email: string, password: string) {
+  return request<RegistrationPendingResponse>(settings, "/api/auth/set-password", accessToken, {
+    method: "POST",
+    body: JSON.stringify({ Email: email, Password: password }),
+  });
+}
+
+export function changePassword(settings: AppSettings, accessToken: string, currentPassword: string, newPassword: string) {
+  return request<void>(settings, "/api/auth/change-password", accessToken, {
+    method: "POST",
+    body: JSON.stringify({ CurrentPassword: currentPassword, NewPassword: newPassword }),
   });
 }
 

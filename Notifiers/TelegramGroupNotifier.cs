@@ -1,5 +1,5 @@
-using HeartPulse.Controllers;
 using HeartPulse.Exceptions;
+using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Models;
 using HeartPulse.Notifiers.Interfaces;
 using Telegram.Bot;
@@ -12,6 +12,7 @@ namespace HeartPulse.Notifiers;
 public class TelegramGroupNotifier(
     ITelegramBotClient bot,
     IGroupNotificationBuilder builder,
+    ITelegramTextFormatter formatter,
     IMongoDatabase database,
     ILogger<TelegramGroupNotifier> logger)
     : IGroupNotifier
@@ -50,7 +51,7 @@ public class TelegramGroupNotifier(
             await SendMessageWithTooLongLoggingAsync(
                 user.ChatId.GetValueOrDefault(),
                 chunk,
-                TelegramController.StatusKeyboard,
+                formatter.BuildStatusKeyboard(user.Language),
                 ct);
         }
     }
@@ -81,7 +82,7 @@ public class TelegramGroupNotifier(
             var sent = await SendMessageWithTooLongLoggingAsync(
                 chatId,
                 chunk,
-                TelegramController.BuildStatusKeyboard(language),
+                formatter.BuildStatusKeyboard(language),
                 ct);
 
             var record = new TelegramStatusMessage

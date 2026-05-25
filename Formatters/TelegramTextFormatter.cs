@@ -3,6 +3,7 @@ using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Options;
 using Microsoft.Extensions.Options;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace HeartPulse.Formatters;
 
@@ -42,5 +43,19 @@ public class TelegramTextFormatter(IAppLocalizer localizer, IOptions<TelegramOpt
     public string BuildHelpText()
     {
         throw new NotImplementedException();
+    }
+
+    public ReplyKeyboardMarkup BuildStatusKeyboard(string? language = null)
+    {
+        var safe = language == "uk" ? "В безпеці" : "Safe";
+        var shelter = language == "uk" ? "В укритті" : "In shelter";
+        return new ReplyKeyboardMarkup(new[]
+        {
+            new KeyboardButton[] { safe, shelter, "SOS" }
+        })
+        {
+            ResizeKeyboard = true,
+            OneTimeKeyboard = false
+        };
     }
 }

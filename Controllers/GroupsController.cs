@@ -2,6 +2,7 @@ using System.Net;
 using HeartPulse.DTOs;
 using HeartPulse.Events;
 using HeartPulse.Exceptions;
+using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Hubs;
 using HeartPulse.Localization;
 using HeartPulse.Models;
@@ -27,6 +28,7 @@ public class GroupsController(
     IGroupStatusRequestRepository statusRequests,
     IHubContext<StatusHub> statusHub,
     ITelegramBotClient bot,
+    ITelegramTextFormatter formatter,
     IServiceScopeFactory scopeFactory,
     IOptions<AppOptions> appOptions,
     IOptions<TelegramOptions> telegramOptions,
@@ -348,7 +350,7 @@ public class GroupsController(
                     recipient.ChatId,
                     text,
                     parseMode: ParseMode.Html,
-                    replyMarkup: TelegramController.BuildStatusKeyboard(recipient.Language));
+                    replyMarkup: formatter.BuildStatusKeyboard(recipient.Language));
             }
             catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
             {

@@ -34,4 +34,7 @@ public interface IAuthService
         string userId,
         string userName,
         CancellationToken ct);
+
+    Task<AppUser> SetPasswordAsync(string userId, string email, string password, CancellationToken ct);
+    Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken ct);
 }

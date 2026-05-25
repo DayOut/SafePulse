@@ -35,6 +35,7 @@ import {
   UserStatus,
   acceptInvite,
   addGroupMember,
+  changePassword,
   createGroup,
   createInvite,
   createTelegramLinkCode,
@@ -53,6 +54,7 @@ import {
   removeGroupMember,
   requestGroupStatusUpdate,
   resolveInvite,
+  setPassword,
   updateGroupMemberRole,
   updateLanguage,
   updateProfile,
@@ -101,6 +103,16 @@ function statusShort(status: UserStatus, lang: Lang): string {
   if (status === "InShelter") return i18nT("status.inShelter.short", lang);
   if (status === "NeedHelp")  return i18nT("status.needHelp.short", lang);
   return i18nT("status.unknown.short", lang);
+}
+
+async function forceUpdate() {
+  if ("serviceWorker" in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  const keys = await caches.keys();
+  await Promise.all(keys.map((k) => caches.delete(k)));
+  window.location.reload();
 }
 
 // ── App ────────────────────────────────────────────────────────────
@@ -163,6 +175,20 @@ export default function App() {
     return () => { cancelled = true; };
   }, [settings]);
 
+  useEffect(() => {
+    if (!session) return;
+    const expiresAt = new Date(session.AccessTokenExpiresAt).getTime();
+    const delay = expiresAt - Date.now() - 60_000; // refresh 1 min before expiry
+    let cancelled = false;
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+      refreshSession(settings)
+        .then((next) => { if (!cancelled) setSession(next); })
+        .catch(() => { if (!cancelled) setSession(null); });
+    }, Math.max(delay, 0));
+    return () => { cancelled = true; clearTimeout(timer); };
+  }, [session?.AccessTokenExpiresAt, settings]);
+
   const currentUser = useQuery({
     queryKey: ["current-user", settings, session?.AccessToken],
     queryFn: () => getCurrentUser(settings, session!.AccessToken),
@@ -207,8 +233,23 @@ export default function App() {
   const appConfigQuery = useQuery({
     queryKey: ["app-config", settings],
     queryFn: () => getAppConfig(settings),
-    staleTime: Infinity,
+    staleTime: 5 * 60 * 1000,
+    refetchInterval: 5 * 60 * 1000,
+    refetchOnWindowFocus: true,
   });
+
+  const seenServerStartTime = useRef<number | null>(null);
+  useEffect(() => {
+    const serverTime = appConfigQuery.data?.ServerStartTime;
+    if (!serverTime) return;
+    if (seenServerStartTime.current === null) {
+      seenServerStartTime.current = serverTime;
+      return;
+    }
+    if (serverTime !== seenServerStartTime.current) {
+      void forceUpdate();
+    }
+  }, [appConfigQuery.data?.ServerStartTime]);
 
   const passwordLoginMutation = useMutation({
     mutationFn: (payload: { email: string; password: string }) =>
@@ -1999,6 +2040,154 @@ function ProfileSection({
   );
 }
 
+function PasswordSection({
+  settings,
+  accessToken,
+  currentUser,
+}: {
+  settings: AppSettings;
+  accessToken: string;
+  currentUser: UserDto;
+}) {
+  const t = useT();
+  const hasEmail = Boolean(currentUser.Email);
+
+  const [setForm, setSetForm] = useState({ email: "", password: "", confirm: "" });
+  const [setMismatch, setSetMismatch] = useState(false);
+
+  const [changeForm, setChangeForm] = useState({ current: "", newPwd: "", confirm: "" });
+  const [changeMismatch, setChangeMismatch] = useState(false);
+
+  const resendMutation = useMutation({
+    mutationFn: (email: string) => resendVerificationEmail(settings, email),
+  });
+
+  const setPasswordMutation = useMutation({
+    mutationFn: () => setPassword(settings, accessToken, setForm.email, setForm.password),
+    onSuccess: () => setSetForm({ email: "", password: "", confirm: "" }),
+  });
+
+  const changePasswordMutation = useMutation({
+    mutationFn: () => changePassword(settings, accessToken, changeForm.current, changeForm.newPwd),
+    onSuccess: () => setChangeForm({ current: "", newPwd: "", confirm: "" }),
+  });
+
+  function handleSetPassword(e: FormEvent) {
+    e.preventDefault();
+    if (setForm.password !== setForm.confirm) { setSetMismatch(true); return; }
+    setSetMismatch(false);
+    setPasswordMutation.mutate();
+  }
+
+  function handleChangePassword(e: FormEvent) {
+    e.preventDefault();
+    if (changeForm.newPwd !== changeForm.confirm) { setChangeMismatch(true); return; }
+    setChangeMismatch(false);
+    changePasswordMutation.mutate();
+  }
+
+  return (
+    <div className="sp-settings-section">
+      <div className="sp-settings-section-head">
+        <div className="sp-section-head">
+          <span className="sp-section-head-label">
+            <span className="sp-section-head-code">02</span>{t("pro.sectionSecurity")}
+          </span>
+        </div>
+      </div>
+      <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)" }}>
+        <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.1em", marginBottom: 10 }}>
+          {hasEmail ? t("pro.changePasswordDesc") : t("pro.addEmailPasswordDesc")}
+        </div>
+        {!hasEmail ? (
+          setPasswordMutation.isSuccess ? (
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              <div className="sp-mono" style={{ fontSize: 11, color: "var(--sp-safe)", lineHeight: 1.5 }}>
+                ✓ {t("pro.verifyEmailSent").replace("{email}", setPasswordMutation.data?.Email ?? "")}
+              </div>
+              <button
+                className="sp-btn-secondary" type="button"
+                disabled={resendMutation.isPending}
+                onClick={() => resendMutation.mutate(setPasswordMutation.data?.Email ?? "")}
+              >
+                {t("pro.resendVerification")}
+              </button>
+              {resendMutation.isSuccess && (
+                <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-safe)" }}>✓ {t("auth.resendSent")}</div>
+              )}
+            </div>
+          ) : (
+            <form onSubmit={handleSetPassword} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              <input
+                className="sp-text-input" type="email"
+                placeholder={t("pro.emailPlaceholder")}
+                value={setForm.email}
+                onChange={(e) => setSetForm((f) => ({ ...f, email: e.target.value }))}
+                required disabled={setPasswordMutation.isPending}
+              />
+              <input
+                className="sp-text-input" type="password"
+                placeholder={t("pro.passwordPlaceholder")}
+                value={setForm.password}
+                onChange={(e) => setSetForm((f) => ({ ...f, password: e.target.value }))}
+                required disabled={setPasswordMutation.isPending}
+              />
+              <input
+                className="sp-text-input" type="password"
+                placeholder={t("pro.confirmPasswordPlaceholder")}
+                value={setForm.confirm}
+                onChange={(e) => setSetForm((f) => ({ ...f, confirm: e.target.value }))}
+                required disabled={setPasswordMutation.isPending}
+              />
+              {setMismatch && <div className="sp-error-box">{t("pro.passwordMismatch")}</div>}
+              {setPasswordMutation.isError && (
+                <div className="sp-error-box">{setPasswordMutation.error.message}</div>
+              )}
+              <button className="sp-btn-action" type="submit" disabled={setPasswordMutation.isPending}>
+                {t("pro.setPasswordBtn")}
+              </button>
+            </form>
+          )
+        ) : (
+          <form onSubmit={handleChangePassword} style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            <input
+              className="sp-text-input" type="password"
+              placeholder={t("pro.currentPasswordPlaceholder")}
+              value={changeForm.current}
+              onChange={(e) => setChangeForm((f) => ({ ...f, current: e.target.value }))}
+              required disabled={changePasswordMutation.isPending}
+            />
+            <input
+              className="sp-text-input" type="password"
+              placeholder={t("pro.newPasswordPlaceholder")}
+              value={changeForm.newPwd}
+              onChange={(e) => setChangeForm((f) => ({ ...f, newPwd: e.target.value }))}
+              required disabled={changePasswordMutation.isPending}
+            />
+            <input
+              className="sp-text-input" type="password"
+              placeholder={t("pro.confirmPasswordPlaceholder")}
+              value={changeForm.confirm}
+              onChange={(e) => setChangeForm((f) => ({ ...f, confirm: e.target.value }))}
+              required disabled={changePasswordMutation.isPending}
+            />
+            {changeMismatch && <div className="sp-error-box">{t("pro.passwordMismatch")}</div>}
+            {changePasswordMutation.isError && (
+              <div className="sp-error-box">{changePasswordMutation.error.message}</div>
+            )}
+            {changePasswordMutation.isSuccess && (
+              <div className="sp-mono" style={{ fontSize: 11, color: "var(--sp-safe)" }}>✓ {t("pro.passwordChanged")}</div>
+            )}
+            <button className="sp-btn-action" type="submit" disabled={changePasswordMutation.isPending}>
+              {t("pro.changePasswordBtn")}
+            </button>
+          </form>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ── Settings page ──────────────────────────────────────────────────
 function SettingsPage({
   settings,
@@ -2129,11 +2318,14 @@ function SettingsPage({
 
         {/* Profile */}
         {activeSection === "profile" && (
-          <ProfileSection
-            currentUser={currentUser}
-            t={t}
-            updateProfileMutation={updateProfileMutation}
-          />
+          <>
+            <ProfileSection
+              currentUser={currentUser}
+              t={t}
+              updateProfileMutation={updateProfileMutation}
+            />
+            <PasswordSection settings={settings} accessToken={accessToken} currentUser={currentUser} />
+          </>
         )}
 
         {/* Integrations */}
@@ -2558,7 +2750,10 @@ function statusOrder(status: UserStatus) {
 }
 
 function formatDateTime(value: string) {
-  return new Date(value).toLocaleString();
+  return new Date(value).toLocaleString([], {
+    year: "numeric", month: "2-digit", day: "2-digit",
+    hour: "2-digit", minute: "2-digit", hour12: false,
+  });
 }
 
 function normalizeStatusChanged(message: StatusChangedDto | Record<string, unknown>): StatusChangedDto {

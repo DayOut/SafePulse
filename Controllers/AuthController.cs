@@ -210,6 +210,53 @@ public class AuthController(
     }
 
     [Authorize]
+    [HttpPost("set-password")]
+    public async Task<ActionResult<RegistrationPendingResponse>> SetPassword([FromBody] SetPasswordRequest request, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        try
+        {
+            var user = await authService.SetPasswordAsync(userId, request.Email, request.Password, ct);
+            await emailVerificationService.SendVerificationEmailAsync(user, ct);
+            return Accepted(new RegistrationPendingResponse { Email = user.Email! });
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Conflict(ex.Message);
+        }
+    }
+
+    [Authorize]
+    [HttpPost("change-password")]
+    public async Task<IActionResult> ChangePassword([FromBody] ChangePasswordRequest request, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        try
+        {
+            await authService.ChangePasswordAsync(userId, request.CurrentPassword, request.NewPassword, ct);
+            return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return BadRequest(ex.Message);
+        }
+        catch (UnauthorizedAccessException ex)
+        {
+            return Unauthorized(ex.Message);
+        }
+    }
+
+    [Authorize]
     [HttpPatch("me/language")]
     public async Task<ActionResult<UserDto>> UpdateLanguage([FromBody] UpdateLanguageRequest request, CancellationToken ct)
     {

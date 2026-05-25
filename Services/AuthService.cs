@@ -144,6 +144,55 @@ public class AuthService(
     public Task<(AppUser User, string AccessToken, DateTime AccessTokenExpiresAt, string RefreshToken)> IssueSessionForVerifiedUserAsync(
         AppUser user, CancellationToken ct) => IssueSessionAsync(user, ct);
 
+    public async Task<AppUser> SetPasswordAsync(string userId, string email, string password, CancellationToken ct)
+    {
+        var normalizedEmail = NormalizeEmail(email);
+
+        if (string.IsNullOrWhiteSpace(normalizedEmail) || !normalizedEmail.Contains('@'))
+            throw new ArgumentException("Valid email is required");
+
+        if (string.IsNullOrWhiteSpace(password) || password.Length < 8)
+            throw new ArgumentException("Password must be at least 8 characters");
+
+        var user = await db.Users.FindAsync(new object?[] { userId }, ct)
+            ?? throw new InvalidOperationException("User not found");
+
+        if (!string.IsNullOrWhiteSpace(user.PasswordHash) && user.EmailVerifiedAt.HasValue)
+            throw new InvalidOperationException("Password is already set — use change password");
+
+        var conflict = await db.Users.FirstOrDefaultAsync(
+            u => u.NormalizedEmail == normalizedEmail && u.Id != userId && u.IsDeleted != true, ct);
+        if (conflict is not null)
+            throw new InvalidOperationException("Email is already registered");
+
+        var now = DateTime.UtcNow;
+        user.Email = email.Trim();
+        user.NormalizedEmail = normalizedEmail;
+        user.PasswordHash = HashPassword(password);
+        user.EmailVerifiedAt = null;
+        user.EmailVerificationLastSentAt = null;
+        user.UpdatedAt = now;
+
+        await db.SaveChangesAsync(ct);
+        return user;
+    }
+
+    public async Task ChangePasswordAsync(string userId, string currentPassword, string newPassword, CancellationToken ct)
+    {
+        if (string.IsNullOrWhiteSpace(newPassword) || newPassword.Length < 8)
+            throw new ArgumentException("New password must be at least 8 characters");
+
+        var user = await db.Users.FindAsync(new object?[] { userId }, ct)
+            ?? throw new UnauthorizedAccessException("User not found");
+
+        if (string.IsNullOrWhiteSpace(user.PasswordHash) || !VerifyPassword(currentPassword, user.PasswordHash))
+            throw new UnauthorizedAccessException("Current password is incorrect");
+
+        user.PasswordHash = HashPassword(newPassword);
+        user.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+    }
+
     public async Task RevokeRefreshTokenAsync(string refreshToken, CancellationToken ct)
     {
         var tokenHash = HashToken(refreshToken);

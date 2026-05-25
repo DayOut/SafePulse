@@ -12,6 +12,8 @@ public class ConfigController(
     IOptions<TelegramOptions> telegramOptions,
     IOptions<AuthOptions> authOptions) : ControllerBase
 {
+    private static readonly long StartTime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
     [HttpGet]
     public IActionResult Get()
     {
@@ -22,6 +24,7 @@ public class ConfigController(
             TelegramBotUsername = telegramOptions.Value.BotUsername,
             TelegramBotId = botId,
             EnableDevLogin = authOptions.Value.EnableDevLogin,
+            ServerStartTime = StartTime,
         });
     }
 }

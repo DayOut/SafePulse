@@ -90,6 +90,9 @@ public class GroupNotificationBuilder(
 
             foreach (var member in members)
             {
+                if (member.Id == changedUser.Id)
+                    continue;
+
                 if (member.ChatId.HasValue &&
                     member.TelegramNotificationsEnabled != false &&
                     !presenceTracker.IsOnline(member.Id))
