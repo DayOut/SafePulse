@@ -314,7 +314,7 @@ const translations = {
     "set.linkedSuccess": "Telegram успішно підключено!",
     "set.generateCode": "Згенерувати код",
     "set.disconnect": "Відключити Telegram",
-    "set.telegramNotifyWhenOnline": "Сповіщення в Telegram під час онлайн",
+    "set.telegramNotifyWhenOnline": "Сповіщення в Telegram коли онлайн",
     "set.telegramNotifyWhenOnlineDesc": "Надсилати сповіщення в Telegram, навіть коли веб-застосунок відкритий.",
     // Appearance
     "set.appearance": "Вигляд",
