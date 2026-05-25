@@ -29,10 +29,12 @@ public class GroupsController(
     ITelegramBotClient bot,
     IServiceScopeFactory scopeFactory,
     IOptions<AppOptions> appOptions,
+    IOptions<TelegramOptions> telegramOptions,
     IAppLocalizer localizer,
     ILogger<GroupsController> logger) : ControllerBase
 {
     private readonly AppOptions _appOptions = appOptions.Value;
+    private readonly TelegramOptions _telegramOptions = telegramOptions.Value;
 
     [HttpPost]
     public async Task<ActionResult<GroupDto>> Create([FromBody] CreateGroupRequest request, CancellationToken ct)
@@ -101,7 +103,7 @@ public class GroupsController(
 
         try
         {
-            var group = await groupService.UpdateAsync(groupId, ownerId, request.Name, ct);
+            var group = await groupService.UpdateAsync(groupId, ownerId, request.Name, request.TelegramInviteLink, ct);
             return group is null ? NotFound() : Ok(ToDto(group));
         }
         catch (InvalidOperationException ex)
@@ -324,7 +326,7 @@ public class GroupsController(
         Note = invite.Note,
         CreatedAt = invite.CreatedAt,
         RevokedAt = invite.RevokedAt,
-        TelegramUrl = $"https://t.me/{TelegramController.BotUsername}?start=join_{invite.Token}",
+        TelegramUrl = $"https://t.me/{_telegramOptions.BotUsername}?start=join_{invite.Token}",
         ApiUrl = $"{Request.Scheme}://{Request.Host}/api/invites/{invite.Token}"
     };
 

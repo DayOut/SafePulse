@@ -195,6 +195,21 @@ public class AuthController(
     }
 
     [Authorize]
+    [HttpPatch("me")]
+    public async Task<ActionResult<UserDto>> UpdateProfile([FromBody] UpdateProfileRequest request, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.UserName))
+            return BadRequest("UserName is required");
+
+        var user = await userService.UpdateAsync(userId, request.UserName.Trim(), null, ct);
+        return user is null ? NotFound() : Ok(ToDto(user));
+    }
+
+    [Authorize]
     [HttpPatch("me/language")]
     public async Task<ActionResult<UserDto>> UpdateLanguage([FromBody] UpdateLanguageRequest request, CancellationToken ct)
     {
@@ -238,6 +253,7 @@ public class AuthController(
     {
         Id = user.Id,
         UserName = user.UserName,
+        Email = user.Email,
         ChatId = user.ChatId,
         TelegramUserId = user.TelegramUserId,
         Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : user.Language,

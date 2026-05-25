@@ -29,6 +29,7 @@ public class MeController(IGroupService groupService) : ControllerBase
                 Id = group.Id,
                 Name = group.Name,
                 OwnerId = group.OwnerId,
+                TelegramInviteLink = group.TelegramInviteLink,
                 Members = members.Select(member => ToMemberDto(member, group.OwnerId, userId, managerCanManage)).ToList()
             });
         }

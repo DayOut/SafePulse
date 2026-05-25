@@ -544,7 +544,6 @@ input, textarea, select {
   border-color: var(--sp-help);
   background: var(--sp-help);
   color: #fff;
-  animation: sp-square-pulse 1.4s ease-out infinite;
 }
 .sp-cluster-btn--help .sp-cluster-btn-label        { color: var(--sp-help); }
 .sp-cluster-btn--help.active                       { background: oklch(0.46 0.18 25); box-shadow: inset 0 0 0 2px var(--sp-help); }
@@ -1465,6 +1464,10 @@ input, textarea, select {
 }
 
 .sp-btn-danger {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   padding: 8px 14px;
   border: 1px solid var(--sp-help);
   background: transparent;
@@ -1593,6 +1596,42 @@ input, textarea, select {
   font-weight: 600;
 }
 .sp-settings-nav-item--danger { color: var(--sp-help); }
+
+/* Mobile tab bar (hidden on desktop) */
+.sp-settings-mobile-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--sp-border);
+  background: var(--sp-surface);
+}
+
+.sp-settings-mobile-tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 10px 6px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--sp-fg-3);
+  font-family: var(--sp-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: color 0.1s, border-color 0.1s;
+}
+.sp-settings-mobile-tab:hover { color: var(--sp-fg-2); }
+.sp-settings-mobile-tab--active {
+  color: var(--sp-fg);
+  border-bottom-color: var(--sp-fg);
+  font-weight: 600;
+}
+
+@media (min-width: 900px) {
+  .sp-settings-mobile-tabs { display: none; }
+}
 
 @media (min-width: 900px) {
   .sp-settings-layout {

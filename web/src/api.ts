@@ -9,6 +9,8 @@ export type AppSettings = {
 
 export type AppConfig = {
   TelegramBotUsername: string;
+  TelegramBotId: string | null;
+  EnableDevLogin: boolean;
 };
 
 export type AuthSession = {
@@ -25,6 +27,7 @@ export type RegistrationPendingResponse = {
 export type UserDto = {
   Id: string;
   UserName: string;
+  Email?: string | null;
   ChatId: number | null;
   TelegramUserId: string | null;
   Language: string;
@@ -49,6 +52,7 @@ export type MyGroupDto = {
   Id: string;
   Name: string;
   OwnerId: string;
+  TelegramInviteLink?: string | null;
   Members: GroupMemberDto[];
 };
 
@@ -182,6 +186,23 @@ export function loginWithPassword(settings: AppSettings, email: string, password
   });
 }
 
+export type TelegramAuthData = {
+  id: number;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  photo_url?: string;
+  auth_date: number;
+  hash: string;
+};
+
+export function loginWithTelegram(settings: AppSettings, data: TelegramAuthData) {
+  return request<AuthSession>(settings, "/api/auth/telegram", null, {
+    method: "POST",
+    body: JSON.stringify(data),
+  });
+}
+
 export function devLogin(settings: AppSettings) {
   return request<AuthSession>(settings, "/api/auth/dev", null, {
     method: "POST",
@@ -228,6 +249,13 @@ export function disconnectTelegram(settings: AppSettings, accessToken: string) {
   });
 }
 
+export function updateProfile(settings: AppSettings, accessToken: string, userName: string) {
+  return request<UserDto>(settings, "/api/auth/me", accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ UserName: userName }),
+  });
+}
+
 export function updateLanguage(settings: AppSettings, accessToken: string, language: string) {
   return request<UserDto>(settings, "/api/auth/me/language", accessToken, {
     method: "PATCH",
@@ -260,6 +288,18 @@ export function createGroup(settings: AppSettings, accessToken: string, name: st
 export function deleteGroup(settings: AppSettings, accessToken: string, groupId: string) {
   return request<void>(settings, `/api/groups/${encodeURIComponent(groupId)}`, accessToken, {
     method: "DELETE",
+  });
+}
+
+export function updateGroup(
+  settings: AppSettings,
+  accessToken: string,
+  groupId: string,
+  patch: { TelegramInviteLink?: string | null },
+) {
+  return request<GroupDto>(settings, `/api/groups/${encodeURIComponent(groupId)}`, accessToken, {
+    method: "PATCH",
+    body: JSON.stringify(patch),
   });
 }
 

@@ -30,6 +30,7 @@ import {
   MyGroupDto,
   RegistrationPendingResponse,
   StatusChangedDto,
+  TelegramAuthData,
   UserDto,
   UserStatus,
   acceptInvite,
@@ -44,6 +45,7 @@ import {
   getMyGroups,
   getTelegramLinkStatus,
   loginWithPassword,
+  loginWithTelegram,
   logout,
   registerWithPassword,
   resendVerificationEmail,
@@ -53,6 +55,7 @@ import {
   resolveInvite,
   updateGroupMemberRole,
   updateLanguage,
+  updateProfile,
   updateStatus,
 } from "./api";
 import { createStatusConnection } from "./signalr";
@@ -117,22 +120,33 @@ export default function App() {
   }, [theme]);
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [activeTab, setActiveTab] = useState<Tab>(initialGroupId ? "groups" : "overview");
+  const [activeTab, setActiveTab] = useState<Tab>(() => {
+    if (initialGroupId) return "groups";
+    return readInitialTab();
+  });
   const [requestedGroupId, setRequestedGroupId] = useState<string | null>(initialGroupId);
   const [connectionState, setConnectionState] = useState("Disconnected");
   const [statusRequest, setStatusRequest] = useState<GroupStatusRequestedDto | null>(null);
   const [statusChangedMessage, setStatusChangedMessage] = useState<string | null>(null);
   const [recentStatusChanges, setRecentStatusChanges] = useState<StatusChangedDto[]>([]);
   const [emailVerifiedToast, setEmailVerifiedToast] = useState(false);
+  const [showLogoutModal, setShowLogoutModal] = useState(false);
   const statusConnectionRef = useRef<HubConnection | null>(null);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.has("emailVerified")) {
-      window.history.replaceState({}, "", window.location.pathname);
+      window.history.replaceState({}, "", window.location.pathname + window.location.hash);
       setEmailVerifiedToast(true);
     }
   }, []);
+
+  useEffect(() => {
+    const hash = tabToHash(activeTab);
+    if (window.location.hash !== `#${hash}`) {
+      window.history.replaceState({}, "", `#${hash}`);
+    }
+  }, [activeTab]);
 
   useEffect(() => {
     if (!emailVerifiedToast) return;
@@ -190,9 +204,23 @@ export default function App() {
     return () => window.clearTimeout(timer);
   }, [statusChangedMessage]);
 
+  const appConfigQuery = useQuery({
+    queryKey: ["app-config", settings],
+    queryFn: () => getAppConfig(settings),
+    staleTime: Infinity,
+  });
+
   const passwordLoginMutation = useMutation({
     mutationFn: (payload: { email: string; password: string }) =>
       loginWithPassword(settings, payload.email, payload.password),
+    onSuccess: (nextSession) => {
+      setSession(nextSession);
+      void queryClient.invalidateQueries();
+    },
+  });
+
+  const telegramLoginMutation = useMutation({
+    mutationFn: (data: TelegramAuthData) => loginWithTelegram(settings, data),
     onSuccess: (nextSession) => {
       setSession(nextSession);
       void queryClient.invalidateQueries();
@@ -217,10 +245,20 @@ export default function App() {
   const logoutMutation = useMutation({
     mutationFn: () => logout(settings),
     onSettled: () => {
+      setShowLogoutModal(false);
       setSession(null);
       queryClient.clear();
     },
   });
+
+  const telegramLoginMutationRef = useRef(telegramLoginMutation);
+  useEffect(() => { telegramLoginMutationRef.current = telegramLoginMutation; });
+  useEffect(() => {
+    const tgData = readTelegramAuthFromUrl();
+    if (!tgData) return;
+    window.history.replaceState({}, "", window.location.pathname + window.location.hash);
+    telegramLoginMutationRef.current.mutate(tgData);
+  }, []);
 
   useEffect(() => {
     if (!session) return;
@@ -318,12 +356,15 @@ export default function App() {
         onResendVerification={(email) => resendMutation.mutate(email)}
         loginError={passwordLoginMutation.error?.message}
         registerError={registerMutation.error?.message}
+        telegramLoginError={telegramLoginMutation.error?.message}
         resendSent={resendMutation.isSuccess}
         isLoading={passwordLoginMutation.isPending || registerMutation.isPending}
+        isTelegramLoading={telegramLoginMutation.isPending}
         pendingVerificationEmail={pendingVerificationEmail}
         onBackToLogin={() => { setPendingVerificationEmail(null); registerMutation.reset(); resendMutation.reset(); }}
         emailVerifiedToast={emailVerifiedToast}
         emailVerifyError={new URLSearchParams(window.location.search).has("emailVerifyError")}
+        botUsername={appConfigQuery.data?.TelegramBotUsername}
       />
     );
   }
@@ -358,7 +399,7 @@ export default function App() {
                 <span className="sp-conn-dot sp-pulse" />
                 {connLabel}
               </span>
-              <button className="sp-icon-btn" onClick={() => logoutMutation.mutate()} title="Logout" type="button">
+              <button className="sp-icon-btn" onClick={() => setShowLogoutModal(true)} title="Logout" type="button">
                 <LogOut size={15} />
               </button>
             </div>
@@ -426,9 +467,104 @@ export default function App() {
         )}
         {statusChangedMessage && <StatusChangedToast message={statusChangedMessage} />}
         {emailVerifiedToast && <StatusChangedToast message={i18nT("auth.emailVerified", lang)} />}
+
+        {showLogoutModal && (
+          <SpModal title={i18nT("auth.logoutTitle", lang)} onClose={() => setShowLogoutModal(false)}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <p style={{ fontSize: 13, color: "var(--sp-fg-2)", margin: 0 }}>
+                {i18nT("auth.logoutConfirm", lang)}
+              </p>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  className="sp-btn-danger"
+                  style={{ flex: 1 }}
+                  disabled={logoutMutation.isPending}
+                  onClick={() => logoutMutation.mutate()}
+                  type="button"
+                >
+                  <LogOut size={13} />{i18nT("auth.logoutConfirmBtn", lang)}
+                </button>
+                <button
+                  className="sp-btn-secondary"
+                  style={{ flex: 1 }}
+                  onClick={() => setShowLogoutModal(false)}
+                  type="button"
+                >
+                  {i18nT("auth.logoutCancel", lang)}
+                </button>
+              </div>
+            </div>
+          </SpModal>
+        )}
       </main>
     </LanguageContext.Provider>
   );
+}
+
+// ── Telegram Login Button ─────────────────────────────────────────
+function TelegramLoginButton({ botUsername }: { botUsername: string }) {
+  const widgetRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const authUrl = `${window.location.origin}${window.location.pathname}`;
+    const script = document.createElement("script");
+    script.src = "https://telegram.org/js/telegram-widget.js?22";
+    script.setAttribute("data-telegram-login", botUsername);
+    script.setAttribute("data-size", "large");
+    script.setAttribute("data-auth-url", authUrl);
+    script.setAttribute("data-request-access", "write");
+    script.async = true;
+    widgetRef.current?.appendChild(script);
+
+    // Force the widget iframe to fill our container so it overlays the button
+    const observer = new MutationObserver(() => {
+      const iframe = widgetRef.current?.querySelector("iframe");
+      if (iframe) {
+        iframe.style.cssText = "position:absolute;inset:0;width:100%!important;height:100%!important;opacity:0;cursor:pointer;";
+        observer.disconnect();
+      }
+    });
+    if (widgetRef.current)
+      observer.observe(widgetRef.current, { childList: true, subtree: true });
+
+    return () => {
+      observer.disconnect();
+      if (widgetRef.current) widgetRef.current.innerHTML = "";
+    };
+  }, [botUsername]);
+
+  return (
+    <div style={{ position: "relative" }}>
+      {/* Visible custom button — pointer-events off so clicks reach the iframe above */}
+      <button className="sp-btn-secondary" type="button"
+        style={{ width: "100%", pointerEvents: "none",
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor">
+          <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.248-2.04 9.613c-.154.676-.555.84-1.124.523l-3.1-2.285-1.496 1.44c-.165.165-.304.304-.624.304l.222-3.156 5.74-5.183c.25-.222-.054-.345-.386-.123L7.26 14.4l-3.056-.954c-.664-.208-.677-.664.139-.983l11.933-4.602c.554-.2 1.038.135.286.387z"/>
+        </svg>
+        LOGIN WITH TELEGRAM
+      </button>
+      {/* Invisible widget iframe stretched over the button — captures clicks */}
+      <div ref={widgetRef} style={{ position: "absolute", inset: 0, overflow: "hidden" }} />
+    </div>
+  );
+}
+
+function readTelegramAuthFromUrl(): TelegramAuthData | null {
+  const p = new URLSearchParams(window.location.search);
+  const id = p.get("id");
+  const hash = p.get("hash");
+  const authDate = p.get("auth_date");
+  if (!id || !hash || !authDate) return null;
+  return {
+    id: Number(id),
+    first_name: p.get("first_name") ?? undefined,
+    last_name: p.get("last_name") ?? undefined,
+    username: p.get("username") ?? undefined,
+    photo_url: p.get("photo_url") ?? undefined,
+    auth_date: Number(authDate),
+    hash,
+  };
 }
 
 // ── Login page ──────────────────────────────────────────────────────
@@ -438,24 +574,30 @@ function LoginPage({
   onResendVerification,
   loginError,
   registerError,
+  telegramLoginError,
   resendSent,
   isLoading,
+  isTelegramLoading,
   pendingVerificationEmail,
   onBackToLogin,
   emailVerifiedToast,
   emailVerifyError,
+  botUsername,
 }: {
   onLogin: (p: { email: string; password: string }) => void;
   onRegister: (p: { email: string; userName: string; password: string }) => void;
   onResendVerification: (email: string) => void;
   loginError?: string;
   registerError?: string;
+  telegramLoginError?: string;
   resendSent: boolean;
   isLoading: boolean;
+  isTelegramLoading: boolean;
   pendingVerificationEmail: string | null;
   onBackToLogin: () => void;
   emailVerifiedToast: boolean;
   emailVerifyError: boolean;
+  botUsername?: string;
 }) {
   const [mode, setMode] = useState<"login" | "register">("login");
   const [email, setEmail] = useState("");
@@ -469,8 +611,8 @@ function LoginPage({
     setLocalError(null);
   }
 
-  function submitAuth(event: FormEvent) {
-    event.preventDefault();
+  function submitAuth(event?: FormEvent) {
+    event?.preventDefault();
     setLocalError(null);
     if (mode === "login") { onLogin({ email, password }); return; }
     if (password !== confirmPassword) {
@@ -548,10 +690,12 @@ function LoginPage({
               onChange={setUserName} icon={<UserIcon />} sans />
           )}
           <SpField label="PASSWORD" type="password" placeholder="••••••••" value={password}
-            onChange={setPassword} icon={<LockIcon />} />
+            onChange={setPassword} icon={<LockIcon />}
+            onKeyDown={(e) => { if (e.key === "Enter") submitAuth(); }} />
           {mode === "register" && (
             <SpField label="CONFIRM PASSWORD" type="password" placeholder="••••••••" value={confirmPassword}
-              onChange={setConfirmPassword} icon={<LockIcon />} />
+              onChange={setConfirmPassword} icon={<LockIcon />}
+              onKeyDown={(e) => { if (e.key === "Enter") submitAuth(); }} />
           )}
 
           <button className="sp-btn-primary" disabled={isLoading} type="submit">
@@ -574,6 +718,30 @@ function LoginPage({
             {resendSent && <span style={{ color: "var(--sp-safe)", fontSize: 11 }}>{i18nT("auth.resendSent", "en")}</span>}
           </div>
         )}
+
+        {botUsername && (
+          <>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "4px 0" }}>
+              <div style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+              <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.08em" }}>
+                {i18nT("auth.orDivider", "en")}
+              </span>
+              <div style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+            </div>
+            {telegramLoginError && (
+              <div className="sp-error-box">! {telegramLoginError}</div>
+            )}
+            {isTelegramLoading ? (
+              <div className="sp-mono" style={{ textAlign: "center", fontSize: 11, color: "var(--sp-fg-3)" }}>
+                PLEASE WAIT…
+              </div>
+            ) : (
+              <TelegramLoginButton botUsername={botUsername} />
+            )}
+          </>
+        )}
+
+
       </div>
     </div>
   );
@@ -1008,8 +1176,7 @@ function GroupsPage({
   useEffect(() => {
     if (openGroupId) setSelectedGroupId(openGroupId);
   }, [openGroupId]);
-  const [inviteNote, setInviteNote] = useState("");
-  const [latestInvite, setLatestInvite] = useState<string | null>(null);
+  const [latestInvite, setLatestInvite] = useState<{ apiUrl: string; telegramUrl: string } | null>(null);
   const [latestStatusRequest, setLatestStatusRequest] = useState<string | null>(null);
   const [requestCreatedMessage, setRequestCreatedMessage] = useState<string | null>(null);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
@@ -1041,10 +1208,9 @@ function GroupsPage({
   });
 
   const createInviteMutation = useMutation({
-    mutationFn: () => createInvite(settings, accessToken, selectedGroup!.Id, inviteNote),
+    mutationFn: () => createInvite(settings, accessToken, selectedGroup!.Id, ""),
     onSuccess: (invite) => {
-      setInviteNote("");
-      setLatestInvite(invite.ApiUrl);
+      setLatestInvite({ apiUrl: invite.ApiUrl, telegramUrl: invite.TelegramUrl });
     },
   });
 
@@ -1166,11 +1332,9 @@ function GroupsPage({
           <GroupDetails
             group={selectedGroup}
             canManage={selectedGroup.OwnerId === currentUserId}
-            inviteNote={inviteNote}
             latestInvite={latestInvite}
             latestStatusRequest={latestStatusRequest}
             members={selectedGroup.Members}
-            onInviteNoteChange={setInviteNote}
             onCreateInvite={() => createInviteMutation.mutate()}
             isCreatingInvite={createInviteMutation.isPending}
             onRequestStatus={() => requestStatusMutation.mutate()}
@@ -1196,11 +1360,9 @@ function GroupsPage({
             group={selectedGroup}
             canManage={selectedGroup.OwnerId === currentUserId}
             members={selectedGroup.Members}
-            inviteNote={inviteNote}
             latestInvite={latestInvite}
             isCreatingInvite={createInviteMutation.isPending}
             createInviteError={createInviteMutation.error?.message}
-            onInviteNoteChange={setInviteNote}
             onCreateInvite={() => createInviteMutation.mutate()}
             onAddMember={(userId) => addMemberMutation.mutate(userId)}
             onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
@@ -1250,11 +1412,9 @@ function GroupDetails({
   group,
   canManage,
   members,
-  inviteNote,
   latestInvite,
   latestStatusRequest,
   isCreatingInvite,
-  onInviteNoteChange,
   onCreateInvite,
   onRequestStatus,
   requestStatusError,
@@ -1268,11 +1428,9 @@ function GroupDetails({
   group: MyGroupDto;
   canManage: boolean;
   members: GroupMemberDto[];
-  inviteNote: string;
-  latestInvite: string | null;
+  latestInvite: { apiUrl: string; telegramUrl: string } | null;
   latestStatusRequest: string | null;
   isCreatingInvite: boolean;
-  onInviteNoteChange: (v: string) => void;
   onCreateInvite: () => void;
   onRequestStatus: () => void;
   requestStatusError?: string;
@@ -1371,14 +1529,24 @@ function GroupDetails({
         {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{requestStatusError}</div>}
         {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{memberActionError}</div>}
         {latestInvite && (
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)", display: "flex", flexDirection: "column", gap: 6 }}>
             <div className="sp-invite-box">
-              <div className="sp-invite-url">{latestInvite}</div>
+              <div className="sp-invite-url">{latestInvite.apiUrl}</div>
               <div className="sp-invite-actions">
                 <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
-                  onClick={() => { void navigator.clipboard.writeText(latestInvite); }} type="button">
+                  onClick={() => { void navigator.clipboard.writeText(latestInvite.apiUrl); }} type="button">
                   <Copy size={13} />
                   <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Copy</span>
+                </button>
+              </div>
+            </div>
+            <div className="sp-invite-box">
+              <div className="sp-invite-url">{latestInvite.telegramUrl}</div>
+              <div className="sp-invite-actions">
+                <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
+                  onClick={() => { void navigator.clipboard.writeText(latestInvite.telegramUrl); }} type="button">
+                  <Copy size={13} />
+                  <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Telegram</span>
                 </button>
               </div>
             </div>
@@ -1386,21 +1554,10 @@ function GroupDetails({
         )}
         {canManage && (
           <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
-            <div className="sp-input-row">
-              <input className="sp-text-input" placeholder="Invite note"
-                value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
-              <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
-                <Copy size={14} />
-              </button>
-            </div>
-            {/*<div className="sp-input-row" style={{ marginTop: 8 }}>*/}
-            {/*  <input className="sp-text-input" placeholder="User ID to add"*/}
-            {/*    value={memberId} onChange={(e) => setMemberId(e.target.value)} />*/}
-            {/*  <button className="sp-btn-icon" disabled={!memberId.trim()}*/}
-            {/*    onClick={() => { onAddMember(memberId.trim()); setMemberId(""); }} title="Add user" type="button">*/}
-            {/*    <Plus size={14} />*/}
-            {/*  </button>*/}
-            {/*</div>*/}
+            <button className="sp-btn-secondary" style={{ width: "100%", justifyContent: "center" }}
+              disabled={isCreatingInvite} onClick={onCreateInvite} type="button">
+              <Copy size={13} /> GENERATE LINKS
+            </button>
           </div>
         )}
       </div>
@@ -1578,17 +1735,15 @@ function StatusChip({ status }: { status: UserStatus }) {
 
 // ── Group right rail (desktop only) ───────────────────────────────
 function GroupRightRail({
-  group, canManage, members, inviteNote, latestInvite, isCreatingInvite, createInviteError,
-  onInviteNoteChange, onCreateInvite, onAddMember, onDeleteGroup,
+  group, canManage, members, latestInvite, isCreatingInvite, createInviteError,
+  onCreateInvite, onAddMember, onDeleteGroup,
 }: {
   group: MyGroupDto;
   canManage: boolean;
   members: GroupMemberDto[];
-  inviteNote: string;
-  latestInvite: string | null;
+  latestInvite: { apiUrl: string; telegramUrl: string } | null;
   isCreatingInvite: boolean;
   createInviteError?: string;
-  onInviteNoteChange: (v: string) => void;
   onCreateInvite: () => void;
   onAddMember: (userId: string) => void;
   onDeleteGroup?: () => void;
@@ -1637,27 +1792,35 @@ function GroupRightRail({
           {latestInvite && (
             <div className="sp-group-kv-block" style={{ gap: 8 }}>
               <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-2)", wordBreak: "break-all", padding: "8px 10px", background: "var(--sp-bg)", border: "1px solid var(--sp-border)" }}>
-                {latestInvite}
+                {latestInvite.apiUrl}
               </div>
               <button
                 className="sp-btn-secondary"
                 style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}
-                onClick={() => { void navigator.clipboard.writeText(latestInvite); }}
+                onClick={() => { void navigator.clipboard.writeText(latestInvite.apiUrl); }}
                 type="button"
               >
                 <Copy size={12} /> {t("rail.copyLink")}
+              </button>
+              <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-2)", wordBreak: "break-all", padding: "8px 10px", background: "var(--sp-bg)", border: "1px solid var(--sp-border)", marginTop: 4 }}>
+                {latestInvite.telegramUrl}
+              </div>
+              <button
+                className="sp-btn-secondary"
+                style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}
+                onClick={() => { void navigator.clipboard.writeText(latestInvite.telegramUrl); }}
+                type="button"
+              >
+                <Copy size={12} /> {t("rail.telegramLink")}
               </button>
             </div>
           )}
           {canManage && (
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              <div className="sp-input-row">
-                <input className="sp-text-input" placeholder={t("rail.inviteNotePlaceholder")}
-                  value={inviteNote} onChange={(e) => onInviteNoteChange(e.target.value)} />
-                <button className="sp-btn-icon" disabled={isCreatingInvite} onClick={onCreateInvite} title="Create invite" type="button">
-                  <Copy size={14} />
-                </button>
-              </div>
+              <button className="sp-btn-secondary" style={{ display: "flex", alignItems: "center", gap: 6, justifyContent: "center" }}
+                disabled={isCreatingInvite} onClick={onCreateInvite} type="button">
+                <Copy size={13} /> {t("rail.generateLinks")}
+              </button>
               {createInviteError && <div className="sp-error-box">{createInviteError}</div>}
             </div>
           )}
@@ -1727,6 +1890,115 @@ function GroupRightRail({
   );
 }
 
+// ── Profile section ────────────────────────────────────────────────
+function ProfileSection({
+  currentUser, t, updateProfileMutation,
+}: {
+  currentUser: UserDto;
+  t: (k: TranslationKey) => string;
+  updateProfileMutation: ReturnType<typeof useMutation<UserDto, Error, string>>;
+}) {
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameDraft, setUsernameDraft] = useState("");
+
+  function startEdit() {
+    setUsernameDraft(currentUser.UserName);
+    setEditingUsername(true);
+    updateProfileMutation.reset();
+  }
+
+  function cancelEdit() {
+    setEditingUsername(false);
+  }
+
+  function saveUsername(e: FormEvent) {
+    e.preventDefault();
+    const trimmed = usernameDraft.trim();
+    if (!trimmed || trimmed === currentUser.UserName) { cancelEdit(); return; }
+    updateProfileMutation.mutate(trimmed, { onSuccess: () => setEditingUsername(false) });
+  }
+
+  const row = (label: string, value: ReactNode) => (
+    <div className="sp-group-kv" style={{ padding: "9px 0", borderBottom: "1px solid var(--sp-border)" }}>
+      <span className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.1em", minWidth: 120 }}>{label}</span>
+      <span className="sp-mono" style={{ fontSize: 12, color: "var(--sp-fg-2)", wordBreak: "break-all" }}>{value}</span>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Identity */}
+      <div className="sp-settings-section">
+        <div className="sp-settings-section-head">
+          <div className="sp-section-head">
+            <span className="sp-section-head-label">
+              <span className="sp-section-head-code">00</span>{t("set.sectionProfile")}
+            </span>
+          </div>
+        </div>
+        <div style={{ borderTop: "1px solid var(--sp-border)", padding: "0 16px 4px", background: "var(--sp-surface)" }}>
+          {/* Username row — editable */}
+          <div className="sp-group-kv" style={{ padding: "9px 0", borderBottom: "1px solid var(--sp-border)", alignItems: "flex-start", gap: 8 }}>
+            <span className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.1em", minWidth: 120, paddingTop: 2 }}>
+              {t("pro.username")}
+            </span>
+            {editingUsername ? (
+              <form onSubmit={saveUsername} style={{ display: "flex", gap: 6, flex: 1, alignItems: "center" }}>
+                <input
+                  className="sp-text-input"
+                  style={{ flex: 1 }}
+                  value={usernameDraft}
+                  onChange={(e) => setUsernameDraft(e.target.value)}
+                  autoFocus
+                  disabled={updateProfileMutation.isPending}
+                />
+                <button className="sp-btn-icon" type="submit" disabled={updateProfileMutation.isPending} title={t("pro.save")}>
+                  <CheckCircle2 size={14} />
+                </button>
+                <button className="sp-btn-icon" type="button" onClick={cancelEdit} title={t("pro.cancel")}>
+                  <X size={14} />
+                </button>
+              </form>
+            ) : (
+              <div style={{ display: "flex", alignItems: "center", gap: 8, flex: 1 }}>
+                <span className="sp-mono" style={{ fontSize: 12, color: "var(--sp-fg)", fontWeight: 600 }}>{currentUser.UserName}</span>
+                <button className="sp-btn-icon" type="button" onClick={startEdit} style={{ padding: "2px 6px" }} title={t("pro.edit")}>
+                  <Link size={12} />
+                </button>
+                {updateProfileMutation.isSuccess && (
+                  <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-safe)" }}>✓ {t("pro.saved")}</span>
+                )}
+              </div>
+            )}
+          </div>
+          {updateProfileMutation.isError && (
+            <div className="sp-error-box" style={{ marginTop: 6 }}>{updateProfileMutation.error.message}</div>
+          )}
+          {currentUser.Email && row(t("pro.email"), currentUser.Email)}
+          {row(t("pro.id"), currentUser.Id)}
+        </div>
+      </div>
+
+      {/* Status & activity */}
+      <div className="sp-settings-section">
+        <div className="sp-settings-section-head">
+          <div className="sp-section-head">
+            <span className="sp-section-head-label">
+              <span className="sp-section-head-code">01</span>ACTIVITY
+            </span>
+          </div>
+        </div>
+        <div style={{ borderTop: "1px solid var(--sp-border)", padding: "0 16px 4px", background: "var(--sp-surface)" }}>
+          {row(t("pro.status"), <StatusChip status={currentUser.Status} />)}
+          {row(t("pro.memberSince"), formatDateTime(currentUser.CreatedAt))}
+          {row(t("pro.lastActive"), formatDateTime(currentUser.LastActiveAt))}
+          {row(t("pro.lastOnline"), formatDateTime(currentUser.LastSeenOnlineAt))}
+        </div>
+      </div>
+    </>
+  );
+}
+
 // ── Settings page ──────────────────────────────────────────────────
 function SettingsPage({
   settings,
@@ -1744,7 +2016,21 @@ function SettingsPage({
   const queryClient = useQueryClient();
   const t = useT();
   const lang = useContext(LanguageContext);
-  const [activeSection, setActiveSection] = useState("profile");
+  const [activeSection, setActiveSection] = useState(() => {
+    const hash = window.location.hash.slice(1);
+    if (hash.startsWith("settings/")) {
+      const sub = hash.slice("settings/".length);
+      if (sub === "integrations" || sub === "appearance") return sub;
+    }
+    return "profile";
+  });
+
+  useEffect(() => {
+    const next = `#settings/${activeSection}`;
+    if (window.location.hash !== next) {
+      window.history.replaceState({}, "", next);
+    }
+  }, [activeSection]);
   const sk = statusKey(currentUser.Status);
 
   const setLanguage = useMutation({
@@ -1752,10 +2038,15 @@ function SettingsPage({
     onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["current-user"] }),
   });
 
+  const updateProfileMutation = useMutation({
+    mutationFn: (userName: string) => updateProfile(settings, accessToken, userName),
+    onSuccess: () => void queryClient.invalidateQueries({ queryKey: ["current-user"] }),
+  });
+
   const navItems = [
-    { id: "profile",    label: t("set.profile"),    icon: <ShieldCheck size={15} /> },
-    { id: "telegram",   label: t("set.telegram"),   icon: <Bell size={15} /> },
-    { id: "appearance", label: t("set.appearance"), icon: <Sun size={15} /> },
+    { id: "profile",      label: t("set.profile"),      icon: <ShieldCheck size={15} /> },
+    { id: "integrations", label: t("set.integrations"), icon: <Bell size={15} /> },
+    { id: "appearance",   label: t("set.appearance"),   icon: <Sun size={15} /> },
   ];
 
   return (
@@ -1811,6 +2102,21 @@ function SettingsPage({
           </div>
         </div>
 
+        {/* Mobile: horizontal tab bar */}
+        <div className="sp-settings-mobile-tabs sp-mobile-only">
+          {navItems.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className={`sp-settings-mobile-tab ${activeSection === item.id ? "sp-settings-mobile-tab--active" : ""}`}
+              onClick={() => setActiveSection(item.id)}
+            >
+              {item.icon}
+              <span>{item.label}</span>
+            </button>
+          ))}
+        </div>
+
         {/* Desktop: section title */}
         <div className="sp-desktop-only" style={{ padding: "20px 24px 0", flexDirection: "column", gap: 4 }}>
           <div style={{ fontSize: 20, fontWeight: 700 }}>
@@ -1822,78 +2128,87 @@ function SettingsPage({
         </div>
 
         {/* Profile */}
-        <div className="sp-settings-section">
-          <div className="sp-settings-section-head">
-            <div className="sp-section-head">
-              <span className="sp-section-head-label">
-                <span className="sp-section-head-code">00</span>{t("set.sectionProfile")}
-              </span>
-            </div>
-          </div>
-          <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)", display: "flex", flexDirection: "column", gap: 12 }}>
-            <div>
-              <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
-                {t("set.interfaceLang")}
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {(["en", "uk"] as const).map((lang) => {
-                  const active = (currentUser.Language || "en") === lang;
-                  return (
-                    <button
-                      key={lang}
-                      type="button"
-                      className="sp-filter-chip"
-                      disabled={setLanguage.isPending}
-                      style={active ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" } : {}}
-                      onClick={() => { if (!active) setLanguage.mutate(lang); }}
-                    >
-                      {lang === "en" ? t("set.langEn") : t("set.langUk")}
-                    </button>
-                  );
-                })}
-              </div>
-              {setLanguage.isError && (
-                <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-help)", marginTop: 6 }}>
-                  {setLanguage.error instanceof Error ? setLanguage.error.message : "Failed to update language"}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
+        {activeSection === "profile" && (
+          <ProfileSection
+            currentUser={currentUser}
+            t={t}
+            updateProfileMutation={updateProfileMutation}
+          />
+        )}
 
-        {/* Telegram */}
-        <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
+        {/* Integrations */}
+        {activeSection === "integrations" && (
+          <TelegramLinkPanel settings={settings} accessToken={accessToken} currentUser={currentUser} />
+        )}
 
         {/* Appearance */}
-        <div className="sp-settings-section">
-          <div className="sp-settings-section-head">
-            <div className="sp-section-head">
-              <span className="sp-section-head-label">
-                <span className="sp-section-head-code">03</span>{t("set.sectionAppearance")}
-              </span>
+        {activeSection === "appearance" && (
+          <>
+            <div className="sp-settings-section">
+              <div className="sp-settings-section-head">
+                <div className="sp-section-head">
+                  <span className="sp-section-head-label">
+                    <span className="sp-section-head-code">03</span>{t("set.sectionAppearance")}
+                  </span>
+                </div>
+              </div>
+              <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)" }}>
+                <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
+                  {t("set.theme")}
+                </div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["dark", "light"] as const).map((th) => (
+                    <button
+                      key={th}
+                      type="button"
+                      className="sp-filter-chip"
+                      style={theme === th
+                        ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
+                        : {}}
+                      onClick={() => onThemeChange(th)}
+                    >
+                      {th === "dark" ? t("set.themeDark") : t("set.themeLight")}
+                    </button>
+                  ))}
+                </div>
+              </div>
             </div>
-          </div>
-          <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)" }}>
-            <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
-              {t("set.theme")}
+
+            <div className="sp-settings-section">
+              <div className="sp-settings-section-head">
+                <div className="sp-section-head">
+                  <span className="sp-section-head-label">
+                    <span className="sp-section-head-code">04</span>{t("set.interfaceLang")}
+                  </span>
+                </div>
+              </div>
+              <div style={{ borderTop: "1px solid var(--sp-border)", padding: "12px 16px", background: "var(--sp-surface)" }}>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {(["en", "uk"] as const).map((l) => {
+                    const active = (currentUser.Language || "en") === l;
+                    return (
+                      <button
+                        key={l}
+                        type="button"
+                        className="sp-filter-chip"
+                        disabled={setLanguage.isPending}
+                        style={active ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" } : {}}
+                        onClick={() => { if (!active) setLanguage.mutate(l); }}
+                      >
+                        {l === "en" ? t("set.langEn") : t("set.langUk")}
+                      </button>
+                    );
+                  })}
+                </div>
+                {setLanguage.isError && (
+                  <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-help)", marginTop: 6 }}>
+                    {setLanguage.error instanceof Error ? setLanguage.error.message : "Failed to update language"}
+                  </div>
+                )}
+              </div>
             </div>
-            <div style={{ display: "flex", gap: 6 }}>
-              {(["dark", "light"] as const).map((th) => (
-                <button
-                  key={th}
-                  type="button"
-                  className="sp-filter-chip"
-                  style={theme === th
-                    ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
-                    : {}}
-                  onClick={() => onThemeChange(th)}
-                >
-                  {th === "dark" ? t("set.themeDark") : t("set.themeLight")}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
+          </>
+        )}
       </div>
     </div>
   );
@@ -2186,6 +2501,7 @@ function SpField({
   icon,
   onChange,
   sans,
+  onKeyDown,
 }: {
   label: string;
   value: string;
@@ -2194,6 +2510,7 @@ function SpField({
   icon?: ReactNode;
   onChange: (v: string) => void;
   sans?: boolean;
+  onKeyDown?: React.KeyboardEventHandler<HTMLInputElement>;
 }) {
   return (
     <div className="sp-field-wrap">
@@ -2206,6 +2523,7 @@ function SpField({
           placeholder={placeholder}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onKeyDown={onKeyDown}
         />
       </div>
     </div>
@@ -2287,6 +2605,20 @@ function playStatusRequestSignal() {
 function readInitialGroupId() {
   if (typeof window === "undefined") return null;
   return new URLSearchParams(window.location.search).get("groupId");
+}
+
+function readInitialTab(): Tab {
+  if (typeof window === "undefined") return "overview";
+  const hash = window.location.hash.slice(1);
+  if (hash === "groups") return "groups";
+  if (hash === "settings" || hash.startsWith("settings/")) return "settings";
+  return "overview";
+}
+
+function tabToHash(tab: Tab): string {
+  if (tab === "groups") return "groups";
+  if (tab === "settings") return "settings";
+  return "ops";
 }
 
 function parseInviteToken(value: string) {

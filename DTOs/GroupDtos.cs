@@ -17,6 +17,7 @@ public class CreateGroupRequest
 public class UpdateGroupRequest
 {
     public string? Name { get; set; }
+    public string? TelegramInviteLink { get; set; }
 }
 
 public class GroupMemberDto
@@ -35,6 +36,7 @@ public class MyGroupDto
     public string Id { get; set; } = default!;
     public string Name { get; set; } = default!;
     public string OwnerId { get; set; } = default!;
+    public string? TelegramInviteLink { get; set; }
     public IReadOnlyList<GroupMemberDto> Members { get; set; } = Array.Empty<GroupMemberDto>();
 }
 

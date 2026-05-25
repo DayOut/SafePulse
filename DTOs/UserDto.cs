@@ -4,6 +4,7 @@ public class UserDto
 {
     public string Id { get; set; } = default!;
     public string UserName { get; set; } = default!;
+    public string? Email { get; set; }
     public long? ChatId { get; set; }
     public string? TelegramUserId { get; set; }
     public string Language { get; set; } = "en";
@@ -17,4 +18,9 @@ public class UserDto
 public class UpdateLanguageRequest
 {
     public string Language { get; set; } = default!;
+}
+
+public class UpdateProfileRequest
+{
+    public string? UserName { get; set; }
 }

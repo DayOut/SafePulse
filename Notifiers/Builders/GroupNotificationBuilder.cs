@@ -1,5 +1,4 @@
 using System.Net;
-using HeartPulse.Controllers;
 using HeartPulse.Data;
 using HeartPulse.DTOs;
 using HeartPulse.Formatters;
@@ -18,11 +17,13 @@ public class GroupNotificationBuilder(
     SafePulseContext db,
     ITelegramTextFormatter formatter,
     IOptions<AppOptions> appOptions,
+    IOptions<TelegramOptions> telegramOptions,
     IAppLocalizer localizer,
     IWebPresenceTracker presenceTracker) : IGroupNotificationBuilder
 {
     private const int CompactGroupMemberThreshold = 20;
     private readonly AppOptions _appOptions = appOptions.Value;
+    private readonly TelegramOptions _telegramOptions = telegramOptions.Value;
 
     public async Task<IReadOnlyList<GroupStatusNotification>> BuildStatusNotificationsAsync(
         AppUser changedUser,
@@ -123,7 +124,7 @@ public class GroupNotificationBuilder(
     {
         var publicBaseUrl = _appOptions.PublicBaseUrl?.Trim().TrimEnd('/');
         if (string.IsNullOrWhiteSpace(publicBaseUrl))
-            return $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
+            return $"https://t.me/{_telegramOptions.BotUsername}?start=join_{group.Id}";
 
         return $"{publicBaseUrl}/?groupId={Uri.EscapeDataString(group.Id)}";
     }

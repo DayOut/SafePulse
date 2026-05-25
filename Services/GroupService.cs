@@ -120,7 +120,7 @@ public class GroupService(
         return group;
     }
 
-    public async Task<Group?> UpdateAsync(string groupId, string ownerId, string? name, CancellationToken ct)
+    public async Task<Group?> UpdateAsync(string groupId, string ownerId, string? name, string? telegramInviteLink, CancellationToken ct)
     {
         var group = await db.Groups
             .FirstOrDefaultAsync(g => g.Id == groupId && g.OwnerId == ownerId && g.IsDeleted != true, ct);
@@ -137,6 +137,9 @@ public class GroupService(
 
             group.Name = trimmedName;
         }
+
+        if (telegramInviteLink is not null)
+            group.TelegramInviteLink = string.IsNullOrWhiteSpace(telegramInviteLink) ? null : telegramInviteLink.Trim();
 
         group.UpdatedAt = DateTime.UtcNow;
         await db.SaveChangesAsync(ct);
@@ -317,8 +320,9 @@ public class GroupService(
 
     public async Task<GroupInvite?> GetInviteByTokenAsync(string token, CancellationToken ct)
     {
-        return await db.GroupInvites
-            .FirstOrDefaultAsync(i => i.Token == token, ct);
+        return await _groupInvites
+            .Find(i => i.Token == token)
+            .FirstOrDefaultAsync(ct);
     }
 
     public async Task<Group?> GetByJoinPayloadAsync(string payload, CancellationToken ct)
@@ -334,10 +338,14 @@ public class GroupService(
             if (invite.RevokedAt is not null)
                 return null;
 
-            return await GetByIdAsync(invite.GroupId, ct);
+            return await _groups
+                .Find(g => g.Id == invite.GroupId && g.IsDeleted != true)
+                .FirstOrDefaultAsync(ct);
         }
 
-        return await GetByIdAsync(tokenOrGroupId, ct);
+        return await _groups
+            .Find(g => g.Id == tokenOrGroupId && g.IsDeleted != true)
+            .FirstOrDefaultAsync(ct);
     }
 
     private static string GenerateToken()

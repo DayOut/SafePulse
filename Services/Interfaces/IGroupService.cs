@@ -15,7 +15,7 @@ public interface IGroupService
     Task<bool> IsGroupNameExistAsync(string groupName, CancellationToken ct);
     Task<bool> IsGroupIdExistAsync(string groupId, CancellationToken ct);
     Task<Group> CreateAsync(string ownerId, string name, CancellationToken ct);
-    Task<Group?> UpdateAsync(string groupId, string ownerId, string? name, CancellationToken ct);
+    Task<Group?> UpdateAsync(string groupId, string ownerId, string? name, string? telegramInviteLink, CancellationToken ct);
     Task<bool> SoftDeleteAsync(string groupId, string ownerId, CancellationToken ct);
     Task JoinUserToGroupAsync(AppUser user, string groupId, CancellationToken ct);
     Task<bool> RemoveUserFromGroupAsync(string groupId, string managerId, string userId, CancellationToken ct);

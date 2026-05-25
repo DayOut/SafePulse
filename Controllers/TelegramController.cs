@@ -32,8 +32,6 @@ public class TelegramController(
     private const int MaxTelegramMessageLength = 3900;
     private readonly TelegramOptions _opts = opts.Value;
 
-    public const string BotUsername = "safe_pulse_test_bot";
-
     public static readonly ReplyKeyboardMarkup StatusKeyboard = BuildStatusKeyboard("uk");
 
     public static ReplyKeyboardMarkup BuildStatusKeyboard(string? language)
