@@ -10,4 +10,8 @@ public class Group
     public string Id { get; set; } = default!;
     public string Name { get; set; } = default!;
     public string OwnerId { get; set; } = default!;
+    public bool? IsDeleted { get; set; }
+    public string? TelegramInviteLink { get; set; }
+    public DateTime? CreatedAt { get; set; }
+    public DateTime? UpdatedAt { get; set; }
 }

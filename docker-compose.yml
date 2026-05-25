@@ -7,10 +7,23 @@ services:
     ports:
       - "8080:8080"
     environment:
-      - Mongo__ConnectionString=mongodb://mongo:27017
+      - Mongo__ConnectionString=mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/?authSource=admin
       - Mongo__Database=safepulse
+      - Api__AdminKey=${API_ADMIN_KEY}
+      - App__PublicBaseUrl=${APP_PUBLIC_BASE_URL}
+      - Auth__SigningKey=${AUTH_SIGNING_KEY}
+      - Auth__BootstrapAdminTelegramIds__0=${BOOTSTRAP_ADMIN_TELEGRAM_ID}
+      - Auth__BootstrapAdminEmails__0=${BOOTSTRAP_ADMIN_EMAIL}
       - Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
+      - Telegram__BotUsername=${TELEGRAM_BOT_USERNAME}
       - Telegram__WebhookSecretToken=${TELEGRAM_WEBHOOK_SECRET}
+      - Smtp__Host=${SMTP_HOST}
+      - Smtp__Port=${SMTP_PORT:-587}
+      - Smtp__Username=${SMTP_USERNAME}
+      - Smtp__Password=${SMTP_PASSWORD}
+      - Smtp__FromEmail=${SMTP_FROM_EMAIL}
+      - Smtp__FromName=${SMTP_FROM_NAME:-SafePulse}
+      - Smtp__UseStartTls=${SMTP_USE_STARTTLS:-true}
     depends_on:
       - mongo
 
@@ -18,9 +31,12 @@ services:
     image: mongo:7
     container_name: safepulse-mongo
     restart: unless-stopped
+    command: ["--auth"]
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_ROOT_USERNAME}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD}
       MONGO_INITDB_DATABASE: safepulse
     volumes:
       - mongo-data:/data/db
@@ -32,7 +48,9 @@ services:
     ports:
       - "8081:8081"
     environment:
-      - ME_CONFIG_MONGODB_URL=mongodb://mongo:27017/
+      - ME_CONFIG_MONGODB_URL=mongodb://${MONGO_ROOT_USERNAME}:${MONGO_ROOT_PASSWORD}@mongo:27017/
+      - ME_CONFIG_BASICAUTH_USERNAME=${MONGO_EXPRESS_USERNAME}
+      - ME_CONFIG_BASICAUTH_PASSWORD=${MONGO_EXPRESS_PASSWORD}
 
 volumes:
   mongo-data:

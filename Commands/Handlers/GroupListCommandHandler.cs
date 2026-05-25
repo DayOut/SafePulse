@@ -1,13 +1,15 @@
 using System.Text;
 using HeartPulse.Commands.Interfaces;
-using HeartPulse.Controllers;
 using HeartPulse.DTOs;
-using HeartPulse.Notifiers.Interfaces;
+using HeartPulse.Formatters;
+using HeartPulse.Formatters.Interfaces;
 using HeartPulse.Services.Interfaces;
 
 namespace HeartPulse.Commands.Handlers;
 
-public class GroupListCommandHandler(IGroupService groupService)
+public class GroupListCommandHandler(
+    IGroupService groupService,
+    ITelegramTextFormatter formatter)
     : ITelegramCommandHandler
 {
     public bool CanHandle(TelegramCommandContext context)
@@ -34,7 +36,24 @@ public class GroupListCommandHandler(IGroupService groupService)
         
         foreach (var group in groups)
         {
-            sb.AppendLine($"- {group.Name}" + (group.OwnerId == context.User.Id ? " (Власник)" : ""));
+            var members = await groupService.GetGroupMembersAsync(group.Id, ct);
+            sb.AppendLine(group.Name + (group.OwnerId == context.User.Id ? " (Власник)" : ""));
+            if (members.Count == 0)
+            {
+                sb.AppendLine("- У групі поки немає учасників");
+                sb.AppendLine();
+                continue;
+            }
+
+            foreach (var member in members.OrderByDescending(member => member.User.LastActiveAt))
+            {
+                var userName = member.User.UserName ?? member.User.Id;
+                var time = member.User.LastActiveAt.ToHumanTime();
+                var role = member.Role == "Owner" ? " · owner" : "";
+                sb.AppendLine($"- {userName}: {formatter.FormatStatus(member.User.Status)} ({time}){role}");
+            }
+
+            sb.AppendLine();
         }
 
         return new TelegramCommandResult(sb.ToString());

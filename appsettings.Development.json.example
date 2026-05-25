@@ -9,14 +9,50 @@
       }
     }
   },
-  "Logging": {
-    "LogLevel": {
+  "Serilog": {
+    "MinimumLevel": {
       "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
+      "Override": {
+        "Microsoft": "Warning",
+        "Microsoft.AspNetCore": "Warning",
+        "Microsoft.EntityFrameworkCore": "Warning",
+        "MongoDB": "Warning"
+      }
     }
   },
   "Mongo": {
     "ConnectionString": "mongodb://localhost:27017",
     "Database": "safepulse"
+  },
+  "Api": {
+    "AdminKey": "dev-admin-key"
+  },
+  "App": {
+    "PublicBaseUrl": "http://localhost:5002"
+  },
+  "Auth": {
+    "Issuer": "SafePulse",
+    "Audience": "SafePulse.Web",
+    "SigningKey": "dev-only-safe-pulse-signing-key-change-for-production-12345",
+    "AccessTokenMinutes": 15,
+    "RefreshTokenDays": 30,
+    "TelegramAuthMaxAgeMinutes": 15,
+    "BootstrapAdminTelegramIds": [
+      "admin-1"
+    ],
+    "BootstrapAdminEmails": [
+      "admin@example.com"
+    ],
+    "EnableDevLogin": true
+  },
+  "FakeStatusSimulator": {
+    "Enabled": true,
+    "OwnerUserId": "admin-1",
+    "IntervalSeconds": 10,
+    "UsersChangedPerTick": 3,
+    "Groups": [
+      { "GroupName": "Test Group 1", "UserCount": 10 },
+      { "GroupName": "Test Group 2", "UserCount": 25 }
+    ]
   }
 }

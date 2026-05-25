@@ -1,30 +1,30 @@
-using HeartPulse.Controllers;
 using HeartPulse.Formatters.Interfaces;
+using HeartPulse.Localization;
 using HeartPulse.Models;
+using HeartPulse.Options;
+using Microsoft.Extensions.Options;
+using Telegram.Bot.Types.ReplyMarkups;
 
 namespace HeartPulse.Formatters;
 
-public class TelegramTextFormatter: ITelegramTextFormatter
+public class TelegramTextFormatter(IAppLocalizer localizer, IOptions<TelegramOptions> telegramOptions) : ITelegramTextFormatter
 {
-    public string FormatStatus(UserStatus status)
+    public string FormatStatus(UserStatus status, string? language = null)
     {
-        switch (status)
+        var key = status switch
         {
-            case UserStatus.Safe:
-                return "В безпеці";
-            case UserStatus.InShelter:
-                return "В укритті";
-            case UserStatus.NeedHelp:
-                return "Потребую допомоги";
-            case UserStatus.Unknown:
-                return "Невідомо";
-        }
-        throw new ArgumentOutOfRangeException(nameof(status));
+            UserStatus.Safe => "status.safe",
+            UserStatus.InShelter => "status.inShelter",
+            UserStatus.NeedHelp => "status.needHelp",
+            UserStatus.Unknown => "status.unknown",
+            _ => throw new ArgumentOutOfRangeException(nameof(status))
+        };
+        return localizer.Text(key, language);
     }
 
     public string FormatGroupLink(Group group)
     {
-        var inviteLink = $"https://t.me/{TelegramController.BotUsername}?start=join_{group.Id}";
+        var inviteLink = $"https://t.me/{telegramOptions.Value.BotUsername}?start=join_{group.Id}";
         var groupMess = "Твоє посилання на групу: ";
         groupMess += $"<a href=\"{inviteLink}\">{group.Name}</a>";
         return groupMess;
@@ -43,5 +43,19 @@ public class TelegramTextFormatter: ITelegramTextFormatter
     public string BuildHelpText()
     {
         throw new NotImplementedException();
+    }
+
+    public ReplyKeyboardMarkup BuildStatusKeyboard(string? language = null)
+    {
+        var safe = language == "uk" ? "В безпеці" : "Safe";
+        var shelter = language == "uk" ? "В укритті" : "In shelter";
+        return new ReplyKeyboardMarkup(new[]
+        {
+            new KeyboardButton[] { safe, shelter, "SOS" }
+        })
+        {
+            ResizeKeyboard = true,
+            OneTimeKeyboard = false
+        };
     }
 }
