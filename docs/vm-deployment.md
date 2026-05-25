@@ -19,8 +19,10 @@ Do not store real VM passwords, Docker tokens, Telegram tokens, or signing keys 
 Run from the project root on Windows:
 
 ```powershell
-.\scripts\deploy-vm.ps1 -Tag 0.1.0 -VmPassword "<VM_PASSWORD>"
+.\scripts\deploy-vm.ps1 -Tag 0.3.0 -VmPassword "<VM_PASSWORD>"
 ```
+
+Bump the tag each time you deploy (`0.3.0`, `0.4.0`, etc.).
 
 The script:
 
@@ -137,6 +139,26 @@ After changing `.env`, restart the API:
 ```bash
 cd ~/SafePulse
 docker-compose up -d --no-deps --force-recreate api
+```
+
+## Editing the .env file on VM
+
+SSH in and edit directly:
+
+```powershell
+ssh voblaco@192.168.50.50
+```
+
+```bash
+nano /home/voblaco/SafePulse/.env
+```
+
+Save: `Ctrl+O` → Enter. Exit: `Ctrl+X`.
+
+Then restart the API to apply changes:
+
+```bash
+cd /home/voblaco/SafePulse && docker-compose up -d --no-deps --force-recreate api
 ```
 
 ## Important files on VM
