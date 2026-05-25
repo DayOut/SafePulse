@@ -145,6 +145,8 @@ const translations = {
     "set.linkedSuccess": "Telegram linked successfully!",
     "set.generateCode": "Generate link code",
     "set.disconnect": "Disconnect Telegram",
+    "set.telegramNotifyWhenOnline": "Notify in Telegram while online",
+    "set.telegramNotifyWhenOnlineDesc": "Send Telegram status updates even when you have the web app open.",
     // Appearance
     "set.appearance": "Appearance",
     "set.sectionAppearance": "APPEARANCE",
@@ -312,6 +314,8 @@ const translations = {
     "set.linkedSuccess": "Telegram успішно підключено!",
     "set.generateCode": "Згенерувати код",
     "set.disconnect": "Відключити Telegram",
+    "set.telegramNotifyWhenOnline": "Сповіщення в Telegram під час онлайн",
+    "set.telegramNotifyWhenOnlineDesc": "Надсилати сповіщення в Telegram, навіть коли веб-застосунок відкритий.",
     // Appearance
     "set.appearance": "Вигляд",
     "set.sectionAppearance": "ВИГЛЯД",

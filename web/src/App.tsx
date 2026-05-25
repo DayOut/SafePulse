@@ -57,6 +57,7 @@ import {
   setPassword,
   updateGroupMemberRole,
   updateLanguage,
+  updateNotifications,
   updateProfile,
   updateStatus,
 } from "./api";
@@ -2431,6 +2432,13 @@ function TelegramLinkPanel({
     onSuccess: (code) => setCodeId(code.Id),
   });
 
+  const updateNotificationsMutation = useMutation({
+    mutationFn: (whenOnline: boolean) => updateNotifications(settings, accessToken, whenOnline),
+    onSuccess: (user) => {
+      void queryClient.setQueryData(["current-user", settings, accessToken], user);
+    },
+  });
+
   const disconnect = useMutation({
     mutationFn: () => disconnectTelegram(settings, accessToken),
     onSuccess: () => {
@@ -2510,9 +2518,25 @@ function TelegramLinkPanel({
           </div>
         )}
 
-        {(createCode.error || linkStatus.error || disconnect.error) && (
+        {currentUser.ChatId && (
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "10px 0", cursor: "pointer" }}>
+            <input
+              type="checkbox"
+              checked={currentUser.TelegramNotificationsWhenOnline}
+              disabled={updateNotificationsMutation.isPending}
+              onChange={(e) => updateNotificationsMutation.mutate(e.target.checked)}
+              style={{ marginTop: 2, flexShrink: 0 }}
+            />
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{t("set.telegramNotifyWhenOnline")}</div>
+              <div className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)", marginTop: 2 }}>{t("set.telegramNotifyWhenOnlineDesc")}</div>
+            </div>
+          </label>
+        )}
+
+        {(createCode.error || linkStatus.error || disconnect.error || updateNotificationsMutation.error) && (
           <div className="sp-error-box">
-            {createCode.error?.message ?? linkStatus.error?.message ?? disconnect.error?.message}
+            {createCode.error?.message ?? linkStatus.error?.message ?? disconnect.error?.message ?? updateNotificationsMutation.error?.message}
           </div>
         )}
       </div>

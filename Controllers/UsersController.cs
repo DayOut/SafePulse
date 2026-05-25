@@ -114,6 +114,8 @@ public class UsersController(
         TelegramUserId = user.TelegramUserId,
         Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : user.Language,
         Status = user.Status.ToString(),
+        TelegramNotificationsEnabled = user.TelegramNotificationsEnabled != false,
+        TelegramNotificationsWhenOnline = user.TelegramNotificationsWhenOnline == true,
         LastActiveAt = user.LastActiveAt,
         LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,
         CreatedAt = user.CreatedAt ?? user.LastActiveAt,

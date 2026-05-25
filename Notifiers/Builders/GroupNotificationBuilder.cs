@@ -95,7 +95,7 @@ public class GroupNotificationBuilder(
 
                 if (member.ChatId.HasValue &&
                     member.TelegramNotificationsEnabled != false &&
-                    !presenceTracker.IsOnline(member.Id))
+                    (!presenceTracker.IsOnline(member.Id) || member.TelegramNotificationsWhenOnline == true))
                 {
                     var language = localizer.NormalizeLanguage(member.Language);
                     var text = BuildSingleUserUpdateText(group, changedUser, language);

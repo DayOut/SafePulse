@@ -33,6 +33,8 @@ export type UserDto = {
   TelegramUserId: string | null;
   Language: string;
   Status: UserStatus;
+  TelegramNotificationsEnabled: boolean;
+  TelegramNotificationsWhenOnline: boolean;
   LastActiveAt: string;
   LastSeenOnlineAt: string;
   CreatedAt: string;
@@ -268,6 +270,13 @@ export function updateProfile(settings: AppSettings, accessToken: string, userNa
   return request<UserDto>(settings, "/api/auth/me", accessToken, {
     method: "PATCH",
     body: JSON.stringify({ UserName: userName }),
+  });
+}
+
+export function updateNotifications(settings: AppSettings, accessToken: string, telegramNotificationsWhenOnline: boolean) {
+  return request<UserDto>(settings, "/api/auth/me/notifications", accessToken, {
+    method: "PATCH",
+    body: JSON.stringify({ TelegramNotificationsWhenOnline: telegramNotificationsWhenOnline }),
   });
 }
 

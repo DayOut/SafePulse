@@ -257,6 +257,18 @@ public class AuthController(
     }
 
     [Authorize]
+    [HttpPatch("me/notifications")]
+    public async Task<ActionResult<UserDto>> UpdateNotifications([FromBody] UpdateNotificationsRequest request, CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var user = await userService.SetTelegramNotificationsWhenOnlineAsync(userId, request.TelegramNotificationsWhenOnline, ct);
+        return user is null ? NotFound() : Ok(ToDto(user));
+    }
+
+    [Authorize]
     [HttpPatch("me/language")]
     public async Task<ActionResult<UserDto>> UpdateLanguage([FromBody] UpdateLanguageRequest request, CancellationToken ct)
     {
@@ -305,6 +317,8 @@ public class AuthController(
         TelegramUserId = user.TelegramUserId,
         Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : user.Language,
         Status = user.Status.ToString(),
+        TelegramNotificationsEnabled = user.TelegramNotificationsEnabled != false,
+        TelegramNotificationsWhenOnline = user.TelegramNotificationsWhenOnline == true,
         LastActiveAt = user.LastActiveAt,
         LastSeenOnlineAt = user.LastSeenOnlineAt ?? user.LastActiveAt,
         CreatedAt = user.CreatedAt ?? user.LastActiveAt,

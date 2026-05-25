@@ -187,6 +187,27 @@ public class UserService(
             ct);
     }
 
+    public async Task<AppUser?> SetTelegramNotificationsWhenOnlineAsync(string userId, bool enabled, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.TelegramNotificationsWhenOnline, enabled)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
     public async Task<AppUser?> SetLanguageAsync(string userId, string language, CancellationToken ct)
     {
         var now = DateTime.UtcNow;
