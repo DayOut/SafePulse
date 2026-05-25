@@ -1,12 +1,17 @@
 using System.Text.RegularExpressions;
 using HeartPulse.Commands.Interfaces;
 using HeartPulse.DTOs;
+using HeartPulse.Exceptions;
+using HeartPulse.Formatters.Interfaces;
+using HeartPulse.Localization;
 using HeartPulse.Models;
 using HeartPulse.Options;
 using HeartPulse.Services.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Telegram.Bot;
+using Telegram.Bot.Exceptions;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.ReplyMarkups;
 
@@ -14,35 +19,20 @@ namespace HeartPulse.Controllers;
 
 
 [ApiController]
+[AllowAnonymous]
 [Route("api/telegram/webhook")]
 public class TelegramController(
     ITelegramBotClient bot,
     IUserService userService,
-    ITelegramCommandDispatcher dispatcher, 
+    ITelegramCommandDispatcher dispatcher,
+    ITelegramTextFormatter formatter,
     IOptions<TelegramOptions> opts,
+    IAppLocalizer localizer,
     ILogger<TelegramController> logger)
     : ControllerBase
 {
+    private const int MaxTelegramMessageLength = 3900;
     private readonly TelegramOptions _opts = opts.Value;
-
-    public const string BotUsername = "safe_pulse_test_bot";
-
-    public static readonly ReplyKeyboardMarkup StatusKeyboard = new(new[]
-    {
-        new KeyboardButton[] { "В безпеці", "SOS", "В укритті" }
-    })
-    {
-        ResizeKeyboard = true,
-        OneTimeKeyboard = false
-    };
-
-    private static string FormatStatus(UserStatus status) => status switch
-    {
-        UserStatus.Safe => "✅ В безпеці",
-        UserStatus.NeedHelp => "🆘 Потрібна допомога",
-        UserStatus.InShelter => "🏠 В укритті",
-        _ => "❔ Невідомо"
-    };
 
     private static readonly Regex MdV2EscapeRegex =
         new(@"([_*\[\]()~`>#+\-=|{}.!])", RegexOptions.Compiled);
@@ -81,14 +71,72 @@ public class TelegramController(
 
         var result = await dispatcher.DispatchAsync(context, ct);
 
-        var reply = result?.ReplyText ?? "Доступні команди: /safe, /help, /shelter, /group, /create <назва>, /join <ID_групи>";
+        var reply = result?.ReplyText ?? localizer.Text("telegram.commands", user.Language);
 
-        await bot.SendMessage(
-            chatId,
-            reply,
-            replyMarkup: result?.UseStatusKeyboard == true ? StatusKeyboard : null,
-            cancellationToken: ct);
+        var chunks = SplitMessage(reply);
+        for (var index = 0; index < chunks.Count; index++)
+        {
+            var chunk = chunks[index];
+            try
+            {
+                await bot.SendMessage(
+                    chatId,
+                    chunk,
+                    replyMarkup: result?.UseStatusKeyboard == true && index == chunks.Count - 1
+                        ? formatter.BuildStatusKeyboard(user.Language)
+                        : null,
+                    cancellationToken: ct);
+            }
+            catch (ApiRequestException ex) when (TelegramMessageTooLongException.IsTelegramMessageTooLong(ex))
+            {
+                var tooLong = new TelegramMessageTooLongException(chatId, chunk, ex);
+                logger.LogError(
+                    tooLong,
+                    "Telegram webhook reply chunk is too long. ChatId: {ChatId}, ChunkIndex: {ChunkIndex}, TextLength: {TextLength}, TextPreview: {TextPreview}",
+                    tooLong.ChatId,
+                    index,
+                    tooLong.TextLength,
+                    tooLong.TextPreview);
+                throw tooLong;
+            }
+        }
 
         return Ok();
+    }
+
+    private static IReadOnlyList<string> SplitMessage(string message)
+    {
+        if (message.Length <= MaxTelegramMessageLength)
+            return [message];
+
+        var chunks = new List<string>();
+        var current = new System.Text.StringBuilder();
+
+        foreach (var line in message.Split('\n'))
+        {
+            var lineWithBreak = line + "\n";
+            if (current.Length > 0 && current.Length + lineWithBreak.Length > MaxTelegramMessageLength)
+            {
+                chunks.Add(current.ToString());
+                current.Clear();
+            }
+
+            if (lineWithBreak.Length <= MaxTelegramMessageLength)
+            {
+                current.Append(lineWithBreak);
+                continue;
+            }
+
+            for (var index = 0; index < lineWithBreak.Length; index += MaxTelegramMessageLength)
+            {
+                var length = Math.Min(MaxTelegramMessageLength, lineWithBreak.Length - index);
+                chunks.Add(lineWithBreak.Substring(index, length));
+            }
+        }
+
+        if (current.Length > 0)
+            chunks.Add(current.ToString());
+
+        return chunks;
     }
 }

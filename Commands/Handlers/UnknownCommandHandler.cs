@@ -13,7 +13,7 @@ public class UnknownCommandHandler: ITelegramCommandHandler
     public Task<TelegramCommandResult?> HandleAsync(TelegramCommandContext context, CancellationToken ct)
     {
         return Task.FromResult(new TelegramCommandResult(
-            "Доступні команди: /safe, /help, /shelter, /group, /create <назва>, /join <ID_групи>"
+            "Доступні команди: /safe, /help, /shelter, /group, /create <назва>, /join <ID_групи>, /link <код>, /notifications on|off"
             ))!;
     }
 }

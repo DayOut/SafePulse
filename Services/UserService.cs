@@ -1,31 +1,76 @@
 using HeartPulse.Data;
+using HeartPulse.Localization;
 using HeartPulse.Models;
+using HeartPulse.Repositories.Interfaces;
 using HeartPulse.Services.Interfaces;
+using Microsoft.EntityFrameworkCore;
+using MongoDB.Driver;
 
 namespace HeartPulse.Services;
 
-public class UserService(SafePulseContext db) : IUserService
+public class UserService(
+    SafePulseContext db,
+    IMongoDatabase mongoDatabase,
+    IAppLocalizer localizer,
+    IUserRepository users) : IUserService
 {
+    private readonly IMongoCollection<AppUser> _users = mongoDatabase.GetCollection<AppUser>("users");
+
     public async Task<AppUser> GetOrCreateAsync(
         string userId,
         string userName,
         long chatId,
         CancellationToken ct)
     {
+        var now = DateTime.UtcNow;
+        var linkedFilter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true),
+            Builders<AppUser>.Filter.Or(
+                Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+                Builders<AppUser>.Filter.Eq(u => u.TelegramUserId, userId),
+                Builders<AppUser>.Filter.Eq(u => u.ChatId, chatId)));
+
+        var linkedUser = await _users.FindOneAndUpdateAsync(
+            linkedFilter,
+            Builders<AppUser>.Update
+                .Set(u => u.ChatId, chatId)
+                .Set(u => u.TelegramUserId, userId)
+                .Set(u => u.LastSeenOnlineAt, now)
+                .Set(u => u.UpdatedAt, now),
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+
+        if (linkedUser is not null)
+            return linkedUser;
+
         var user = await db.Users.FindAsync(new object?[] { userId }, ct);
-        if (user is not null)
+        if (user is not null && user.IsDeleted != true)
             return user;
 
-        user = new AppUser
+        if (user is null)
         {
-            Id = userId,
-            UserName = userName,
-            LastActiveAt = DateTime.UtcNow,
-            Status = UserStatus.Unknown,
-            ChatId = chatId
-        };
+            user = new AppUser
+            {
+                Id = userId,
+                CreatedAt = now
+            };
 
-        await db.Users.AddAsync(user, ct);
+            await db.Users.AddAsync(user, ct);
+        }
+
+        user.UserName = userName;
+        user.Language = string.IsNullOrWhiteSpace(user.Language) ? "uk" : localizer.NormalizeLanguage(user.Language);
+        user.LastActiveAt = now;
+        user.LastSeenOnlineAt = now;
+        user.UpdatedAt = now;
+        user.Status = UserStatus.Unknown;
+        user.ChatId = chatId;
+        user.TelegramUserId = userId;
+        user.IsDeleted = false;
+
         await db.SaveChangesAsync(ct);
 
         return user;
@@ -33,13 +78,179 @@ public class UserService(SafePulseContext db) : IUserService
 
     public async Task<AppUser?> GetAsync(string userId, string userName, long chatId, CancellationToken ct)
     {
-        return await db.Users.FindAsync(new object?[] { userId }, ct);
+        return await db.Users
+            .FirstOrDefaultAsync(u => u.Id == userId && u.IsDeleted != true, ct);
     }
 
-    public async Task UpdateStatusAsync(AppUser user, UserStatus status, CancellationToken ct)
+    public async Task<IReadOnlyList<AppUser>> GetAllAsync(CancellationToken ct)
     {
-        user.Status = status;
-        user.LastActiveAt = DateTime.UtcNow;
-        await db.SaveChangesAsync(ct);
+        var filter = Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true);
+        var sort = Builders<AppUser>.Sort.Descending(u => u.LastActiveAt);
+
+        return await _users.Find(filter)
+            .Sort(sort)
+            .ToListAsync(ct);
     }
+
+    public async Task<AppUser?> GetByIdAsync(string userId, CancellationToken ct)
+    {
+        return await users.GetByIdAsync(userId, ct);
+    }
+
+    public async Task<AppUser> CreateAsync(string? id, string userName, long? chatId, UserStatus status, CancellationToken ct)
+    {
+        var userId = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id.Trim();
+        var existing = await db.Users.FindAsync(new object?[] { userId }, ct);
+        if (existing is not null && existing.IsDeleted != true)
+            throw new InvalidOperationException("User already exists");
+
+        var now = DateTime.UtcNow;
+        var user = existing ?? new AppUser
+        {
+            Id = userId,
+            CreatedAt = now
+        };
+
+        user.UserName = userName.Trim();
+        user.Language = string.IsNullOrWhiteSpace(user.Language) ? "en" : localizer.NormalizeLanguage(user.Language);
+        user.ChatId = chatId;
+        user.Status = status;
+        user.LastActiveAt = now;
+        user.LastSeenOnlineAt = now;
+        user.UpdatedAt = now;
+        user.IsDeleted = false;
+
+        if (existing is null)
+            await db.Users.AddAsync(user, ct);
+
+        await db.SaveChangesAsync(ct);
+
+        return user;
+    }
+
+    public async Task<AppUser?> UpdateAsync(string userId, string? userName, long? chatId, CancellationToken ct)
+    {
+        var user = await db.Users.FindAsync(new object?[] { userId }, ct);
+        if (user is null || user.IsDeleted == true)
+            return null;
+
+        if (!string.IsNullOrWhiteSpace(userName))
+            user.UserName = userName.Trim();
+
+        if (chatId.HasValue)
+            user.ChatId = chatId;
+
+        user.UpdatedAt = DateTime.UtcNow;
+        await db.SaveChangesAsync(ct);
+        return user;
+    }
+
+    public async Task<AppUser?> TouchLastSeenOnlineAsync(string userId, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.LastSeenOnlineAt, now)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
+    public async Task<AppUser?> SetTelegramNotificationsAsync(string userId, bool enabled, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.TelegramNotificationsEnabled, enabled)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
+    public async Task<AppUser?> SetTelegramNotificationsWhenOnlineAsync(string userId, bool enabled, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.TelegramNotificationsWhenOnline, enabled)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
+    public async Task<AppUser?> SetLanguageAsync(string userId, string language, CancellationToken ct)
+    {
+        var now = DateTime.UtcNow;
+        var normalizedLanguage = localizer.NormalizeLanguage(language);
+        var filter = Builders<AppUser>.Filter.And(
+            Builders<AppUser>.Filter.Eq(u => u.Id, userId),
+            Builders<AppUser>.Filter.Ne(u => u.IsDeleted, true));
+
+        var update = Builders<AppUser>.Update
+            .Set(u => u.Language, normalizedLanguage)
+            .Set(u => u.UpdatedAt, now);
+
+        return await _users.FindOneAndUpdateAsync(
+            filter,
+            update,
+            new FindOneAndUpdateOptions<AppUser>
+            {
+                ReturnDocument = ReturnDocument.After
+            },
+            ct);
+    }
+
+    public async Task<bool> SoftDeleteAsync(string userId, CancellationToken ct)
+    {
+        var user = await db.Users.FindAsync(new object?[] { userId }, ct);
+        if (user is null || user.IsDeleted == true)
+            return false;
+
+        user.IsDeleted = true;
+        user.UpdatedAt = DateTime.UtcNow;
+
+        var memberships = await db.GroupUsers
+            .Where(gu => gu.UserId == userId && gu.IsDeleted != true)
+            .ToListAsync(ct);
+
+        foreach (var membership in memberships)
+        {
+            membership.IsDeleted = true;
+            membership.UpdatedAt = DateTime.UtcNow;
+        }
+
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
+
 }
