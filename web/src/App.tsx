@@ -9,7 +9,6 @@ import {
   LogOut,
   Plus,
   RefreshCw,
-  Save,
   Send,
   Settings,
   ShieldAlert,
@@ -57,7 +56,7 @@ import {
   updateStatus,
 } from "./api";
 import { createStatusConnection } from "./signalr";
-import { loadSettings, saveSettings } from "./settings";
+import { loadSettings } from "./settings";
 
 type Tab = "overview" | "groups" | "settings";
 
@@ -105,8 +104,7 @@ function statusShort(status: UserStatus, lang: Lang): string {
 export default function App() {
   const queryClient = useQueryClient();
   const initialGroupId = useMemo(() => readInitialGroupId(), []);
-  const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
-  const [draftSettings, setDraftSettings] = useState<AppSettings>(() => loadSettings());
+  const [settings] = useState<AppSettings>(() => loadSettings());
   const [theme, setThemeState] = useState<"dark" | "light">(
     () => (localStorage.getItem("safepulse-theme") as "dark" | "light") ?? "dark",
   );
@@ -301,19 +299,6 @@ export default function App() {
     };
   }, [queryClient, settings, session]);
 
-  function persistSettings(event: FormEvent) {
-    event.preventDefault();
-    const normalized = {
-      apiBaseUrl: draftSettings.apiBaseUrl.replace(/\/$/, ""),
-      devUserId: draftSettings.devUserId.trim(),
-      devUserName: draftSettings.devUserName.trim(),
-      overviewBlockSize: draftSettings.overviewBlockSize,
-    };
-    saveSettings(normalized);
-    setSettings(normalized);
-    setSession(null);
-    void queryClient.invalidateQueries();
-  }
 
   if (!authChecked) {
     return (
@@ -415,12 +400,9 @@ export default function App() {
           )}
           {activeTab === "settings" && (
             <SettingsPage
-              draftSettings={draftSettings}
-              setDraftSettings={setDraftSettings}
               settings={settings}
               accessToken={session.AccessToken}
               currentUser={currentUser.data ?? session.User}
-              onSubmit={persistSettings}
               theme={theme}
               onThemeChange={setTheme}
             />
@@ -1747,21 +1729,15 @@ function GroupRightRail({
 
 // ── Settings page ──────────────────────────────────────────────────
 function SettingsPage({
-  draftSettings,
-  setDraftSettings,
   settings,
   accessToken,
   currentUser,
-  onSubmit,
   theme,
   onThemeChange,
 }: {
-  draftSettings: AppSettings;
-  setDraftSettings: (s: AppSettings) => void;
   settings: AppSettings;
   accessToken: string;
   currentUser: UserDto;
-  onSubmit: (e: FormEvent) => void;
   theme: "dark" | "light";
   onThemeChange: (t: "dark" | "light") => void;
 }) {
@@ -1777,10 +1753,9 @@ function SettingsPage({
   });
 
   const navItems = [
-    { id: "profile",      label: t("set.profile"),      icon: <ShieldCheck size={15} /> },
-    { id: "connectivity", label: t("set.connectivity"), icon: <RefreshCw size={15} /> },
-    { id: "telegram",     label: t("set.telegram"),     icon: <Bell size={15} /> },
-    { id: "appearance",   label: t("set.appearance"),   icon: <Sun size={15} /> },
+    { id: "profile",    label: t("set.profile"),    icon: <ShieldCheck size={15} /> },
+    { id: "telegram",   label: t("set.telegram"),   icon: <Bell size={15} /> },
+    { id: "appearance", label: t("set.appearance"), icon: <Sun size={15} /> },
   ];
 
   return (
@@ -1884,50 +1859,6 @@ function SettingsPage({
               )}
             </div>
           </div>
-        </div>
-
-        {/* Connectivity */}
-        <div className="sp-settings-section">
-          <div className="sp-settings-section-head">
-            <div className="sp-section-head">
-              <span className="sp-section-head-label">
-                <span className="sp-section-head-code">01</span>{t("set.sectionConn")}
-              </span>
-            </div>
-          </div>
-          <form className="sp-settings-form" onSubmit={onSubmit}
-            style={{ borderTop: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
-            <SpField label={t("set.apiUrl")} placeholder="Same origin"
-              value={draftSettings.apiBaseUrl}
-              onChange={(v) => setDraftSettings({ ...draftSettings, apiBaseUrl: v })} />
-            <SpField label={t("set.devUserId")} value={draftSettings.devUserId}
-              onChange={(v) => setDraftSettings({ ...draftSettings, devUserId: v })} />
-            <SpField label={t("set.devUserName")} value={draftSettings.devUserName}
-              onChange={(v) => setDraftSettings({ ...draftSettings, devUserName: v })} />
-            <div>
-              <div className="sp-mono sp-up" style={{ fontSize: 10, color: "var(--sp-fg-3)", letterSpacing: "0.12em", marginBottom: 8 }}>
-                {t("set.blockSize")}
-              </div>
-              <div style={{ display: "flex", gap: 6 }}>
-                {(["small", "medium", "large"] as const).map((size) => (
-                  <button
-                    key={size}
-                    type="button"
-                    className="sp-filter-chip"
-                    style={draftSettings.overviewBlockSize === size
-                      ? { background: "var(--sp-fg)", borderColor: "var(--sp-fg)", color: "var(--sp-bg)" }
-                      : {}}
-                    onClick={() => setDraftSettings({ ...draftSettings, overviewBlockSize: size })}
-                  >
-                    {size === "small" ? t("set.blockSmall") : size === "medium" ? t("set.blockMedium") : t("set.blockLarge")}
-                  </button>
-                ))}
-              </div>
-            </div>
-            <button className="sp-field-save-btn" type="submit">
-              <Save size={13} /> {t("set.save")}
-            </button>
-          </form>
         </div>
 
         {/* Telegram */}
