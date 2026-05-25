@@ -5,6 +5,7 @@ using HeartPulse.Data;
 using HeartPulse.Models;
 using HeartPulse.Options;
 using HeartPulse.Services.Interfaces;
+using Microsoft.AspNetCore.Http;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
 using MongoDB.Driver;
@@ -15,6 +16,7 @@ public class EmailVerificationService(
     SafePulseContext db,
     IMongoDatabase mongoDatabase,
     IEmailSender emailSender,
+    IHttpContextAccessor httpContextAccessor,
     IOptions<EmailVerificationOptions> verificationOptions,
     IOptions<AppOptions> appOptions) : IEmailVerificationService
 {
@@ -32,7 +34,9 @@ public class EmailVerificationService(
                 return;
         }
 
-        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32));
+        // Use URL-safe Base64 (no +/= chars) so email clients can't mangle the link
+        var rawToken = Convert.ToBase64String(RandomNumberGenerator.GetBytes(32))
+            .Replace('+', '-').Replace('/', '_').TrimEnd('=');
         var now = DateTime.UtcNow;
 
         var token = new EmailVerificationToken
@@ -51,8 +55,14 @@ public class EmailVerificationService(
         user.UpdatedAt = now;
         await db.SaveChangesAsync(ct);
 
-        var baseUrl = _app.PublicBaseUrl?.TrimEnd('/') ?? string.Empty;
-        var verifyUrl = $"{baseUrl}/api/auth/verify-email?token={Uri.EscapeDataString(rawToken)}";
+        var baseUrl = _app.PublicBaseUrl?.TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(baseUrl))
+        {
+            var req = httpContextAccessor.HttpContext?.Request;
+            if (req != null)
+                baseUrl = $"{req.Scheme}://{req.Host.Value}";
+        }
+        var verifyUrl = $"{baseUrl}/api/auth/verify-email?token={rawToken}";
         var html = BuildVerificationEmail(user.UserName, verifyUrl, _opts.TokenDays);
         await emailSender.SendAsync(user.Email!, "Verify your SafePulse email", html, ct);
     }

@@ -119,6 +119,8 @@ builder.Services.AddSingleton<ITelegramBotClient>(sp =>
     return new TelegramBotClient(cfg.BotToken);
 });
 
+builder.Services.AddHttpContextAccessor();
+
 var services = builder.Services;
 services.AddScoped<IEmailSender, MailKitEmailSender>();
 services.AddScoped<IEmailVerificationService, EmailVerificationService>();
@@ -168,10 +170,20 @@ using (var scope = app.Services.CreateScope())
         .Sort(Builders<AppUser>.Sort.Descending(x => x.LastActiveAt))
         .Limit(1)
         .ToListAsync();
+
+    // One-time migration: mark all existing users as email-verified
+    var result = await users.UpdateManyAsync(
+        Builders<AppUser>.Filter.Eq(x => x.EmailVerifiedAt, null),
+        Builders<AppUser>.Update.Set(x => x.EmailVerifiedAt, DateTime.UtcNow));
+    if (result.ModifiedCount > 0)
+        Log.Information("Migration: marked {Count} existing users as email-verified", result.ModifiedCount);
 }
 
-app.MapOpenApi();
-app.MapScalarApiReference();
+if (app.Configuration.GetValue<bool>("EnableScalar"))
+{
+    app.MapOpenApi();
+    app.MapScalarApiReference();
+}
 
 app.UseDefaultFiles();
 app.UseStaticFiles();

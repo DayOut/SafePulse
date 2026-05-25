@@ -12,6 +12,7 @@ export default defineConfig({
       injectRegister: "auto",
       workbox: {
         globPatterns: ["**/*.{js,css,html,ico,png,svg,woff2}"],
+        navigateFallbackDenylist: [/^\/api\//, /^\/hubs\//, /^\/scalar/, /^\/openapi/],
       },
       includeAssets: ["logo.svg", "apple-touch-icon.png"],
       manifest: {
