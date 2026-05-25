@@ -93,6 +93,11 @@ try {
     }
 
     Invoke-Step "Copy updated docker-compose.yml to VM" {
+        # Get the currently running image tag so we can preserve it after SCP
+        $currentImage = (Invoke-Remote -Command "docker inspect safepulse-api --format '{{.Config.Image}}'" 2>&1) | Select-Object -Last 1
+        if ([string]::IsNullOrWhiteSpace($currentImage)) { $currentImage = "voblaco/safe-pulse:latest" }
+        $currentImage = $currentImage.Trim()
+
         Invoke-Scp -LocalPath (Join-Path $repoRoot "docker-compose.yml") -RemotePath "$VmProjectDir/docker-compose.yml"
         Invoke-Remote -Command @"
 cd "$VmProjectDir"
@@ -101,7 +106,7 @@ from pathlib import Path
 p = Path("docker-compose.yml")
 s = p.read_text()
 if "build: ." in s:
-    s = s.replace("    build: .", "    image: voblaco/safe-pulse:latest\n    restart: unless-stopped", 1)
+    s = s.replace("    build: .", "    image: $currentImage\n    restart: unless-stopped", 1)
 p.write_text(s)
 PY
 "@
