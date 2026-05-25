@@ -15,6 +15,7 @@ services:
       - Auth__BootstrapAdminTelegramIds__0=${BOOTSTRAP_ADMIN_TELEGRAM_ID}
       - Auth__BootstrapAdminEmails__0=${BOOTSTRAP_ADMIN_EMAIL}
       - Telegram__BotToken=${TELEGRAM_BOT_TOKEN}
+      - Telegram__BotUsername=${TELEGRAM_BOT_USERNAME}
       - Telegram__WebhookSecretToken=${TELEGRAM_WEBHOOK_SECRET}
       - Smtp__Host=${SMTP_HOST}
       - Smtp__Port=${SMTP_PORT:-587}
