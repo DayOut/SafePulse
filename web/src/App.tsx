@@ -1481,6 +1481,8 @@ const REACTION_EMOJIS = ["👍", "❤️", "✅", "🙏", "💪"];
 function SystemMessage({ msg }: { msg: GroupMessageDto }) {
   const lang = useContext(LanguageContext);
 
+  const ts = new Date(msg.CreatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+
   if (msg.EventType === "StatusRequested") {
     return (
       <div style={{ padding: "3px 14px", display: "flex", alignItems: "center", gap: 8 }}>
@@ -1488,6 +1490,7 @@ function SystemMessage({ msg }: { msg: GroupMessageDto }) {
         <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-shelter)", letterSpacing: "0.06em" }}>
           <Activity size={8} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
           {msg.EventUserName} {i18nT("chat.statusRequested", lang)}
+          <span style={{ marginLeft: 5, opacity: 0.6 }}>{ts}</span>
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
       </div>
@@ -1509,6 +1512,7 @@ function SystemMessage({ msg }: { msg: GroupMessageDto }) {
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: statusColor, display: "inline-block", marginRight: 3, verticalAlign: "middle" }} />
           {msg.EventUserName} {i18nT("chat.statusChanged", lang)} {msg.EventStatus ? statusLabel(msg.EventStatus as UserStatus, lang).toUpperCase() : ""}
           {isNeedHelp && <span style={{ marginLeft: 6, letterSpacing: "0.12em" }}>· {i18nT("chat.needHelpBanner", lang)}</span>}
+          <span style={{ marginLeft: 5, opacity: 0.6 }}>{ts}</span>
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
       </div>
