@@ -5,6 +5,7 @@ import {
   CheckCircle2,
   ChevronLeft,
   Copy,
+  Menu,
   DoorOpen,
   Link,
   LogOut,
@@ -1227,6 +1228,7 @@ function GroupsPage({
   const [groupSearch, setGroupSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
   const [rightRailOpen, setRightRailOpen] = useState(false);
+  const [mobileRailOpen, setMobileRailOpen] = useState(!initialSelectedGroupId);
 
   useEffect(() => {
     if (openGroupId) setSelectedGroupId(openGroupId);
@@ -1314,7 +1316,7 @@ function GroupsPage({
   }
 
   return (
-    <div className={`sp-groups-layout${rightRailOpen ? " sp-groups-layout--rail-open" : ""}`}>
+    <div className={`sp-groups-layout${rightRailOpen ? " sp-groups-layout--rail-open" : ""}${mobileRailOpen ? " sp-groups-layout--mobile-open" : ""}`}>
       {/* ── Left rail: group list ──────────────────────────────────── */}
       <div className="sp-groups-rail">
         {/* Rail header */}
@@ -1328,6 +1330,9 @@ function GroupsPage({
             </button>
             <button className="sp-btn-icon" onClick={() => setJoinModalOpen(true)} title="Join with invite" type="button">
               <Link size={14} />
+            </button>
+            <button className="sp-btn-icon sp-mobile-only" onClick={() => setMobileRailOpen(false)} title="Close" type="button">
+              <X size={14} />
             </button>
           </div>
         </div>
@@ -1360,7 +1365,7 @@ function GroupsPage({
               <div
                 key={group.Id}
                 className={`sp-groups-rail-row ${isSelected ? "sp-groups-rail-row--selected" : ""} ${urgent ? "sp-groups-rail-row--urgent" : ""}`}
-                onClick={() => setSelectedGroupId(group.Id)}
+                onClick={() => { setSelectedGroupId(group.Id); setMobileRailOpen(false); }}
               >
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <span className="sp-callsign" style={urgent ? { borderColor: "var(--sp-help)", color: "var(--sp-help)" } : {}}>
@@ -1381,8 +1386,20 @@ function GroupsPage({
         </div>
       </div>
 
+      {/* Mobile backdrop */}
+      <div className="sp-groups-rail-backdrop" onClick={() => setMobileRailOpen(false)} />
+
       {/* ── Center: selected group ─────────────────────────────────── */}
       <div className="sp-groups-center">
+        {/* Mobile toggle button */}
+        <div className="sp-mobile-only" style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 14px", borderBottom: "1px solid var(--sp-border)", background: "var(--sp-surface)" }}>
+          <button className="sp-btn-icon" onClick={() => setMobileRailOpen(true)} type="button" title="Groups list">
+            <Menu size={16} />
+          </button>
+          <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-2)", fontWeight: 700 }}>
+            {selectedGroup?.Name ?? t("grp.searchGroups")}
+          </span>
+        </div>
         {selectedGroup ? (
           <GroupDetails
             group={selectedGroup}

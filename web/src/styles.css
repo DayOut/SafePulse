@@ -1664,6 +1664,41 @@ input, textarea, select {
 .sp-groups-layout {
   display: flex;
   flex-direction: column;
+  position: relative;
+}
+
+/* Mobile: left rail is a fixed slide-in drawer */
+.sp-groups-rail {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 280px;
+  height: 100%;
+  z-index: 50;
+  background: var(--sp-surface);
+  border-right: 1px solid var(--sp-border);
+  transform: translateX(-100%);
+  transition: transform 200ms ease;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+
+.sp-groups-layout--mobile-open .sp-groups-rail {
+  transform: translateX(0);
+}
+
+/* Backdrop overlay */
+.sp-groups-rail-backdrop {
+  display: none;
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.45);
+  z-index: 49;
+}
+
+.sp-groups-layout--mobile-open .sp-groups-rail-backdrop {
+  display: block;
 }
 
 .sp-groups-right-rail {
@@ -1764,9 +1799,17 @@ input, textarea, select {
   }
 
   .sp-groups-rail {
+    position: static;
+    transform: none;
+    transition: none;
     border-right: 1px solid var(--sp-border);
     overflow-y: auto;
     height: 100%;
+    width: auto;
+  }
+
+  .sp-groups-rail-backdrop {
+    display: none !important;
   }
 
   .sp-groups-center {
