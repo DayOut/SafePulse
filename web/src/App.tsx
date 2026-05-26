@@ -42,6 +42,7 @@ import {
   createInvite,
   createTelegramLinkCode,
   deleteGroup,
+  deleteGroupMessage,
   disconnectTelegram,
   getAppConfig,
   getCurrentUser,
@@ -1532,8 +1533,14 @@ function UserMessage({
     try { await toggleReaction(settings, accessToken, groupId, msg.Id, emoji); } catch { /* reaction update comes via SignalR */ }
   }
 
+  async function handleDelete() {
+    if (!window.confirm("Delete this message?")) return;
+    try { await deleteGroupMessage(settings, accessToken, groupId, msg.Id); } catch { /* update comes via SignalR */ }
+  }
+
   const grouped: Record<string, number> = {};
   for (const r of msg.Reactions ?? []) grouped[r.Emoji] = (grouped[r.Emoji] ?? 0) + 1;
+  const hasReactions = Object.keys(grouped).length > 0;
 
   return (
     <div style={{
@@ -1546,34 +1553,76 @@ function UserMessage({
         <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-fg-3)" }}>
           {new Date(msg.CreatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
         </span>
-      </div>
-      <p style={{ fontSize: 12, margin: "0 0 2px", color: "var(--sp-fg-2)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.4 }}>
-        {msg.Text}
-      </p>
-      <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap", position: "relative" }}>
-        {Object.entries(grouped).map(([emoji, count]) => (
-          <button key={emoji} className="sp-filter-chip"
-            style={{ fontSize: 11, padding: "1px 5px", gap: 2, height: 18 }}
-            onClick={() => void handleReaction(emoji)} type="button">
-            {emoji} <span style={{ fontSize: 10 }}>{count}</span>
+        {isMine && !msg.IsDeleted && (
+          <button
+            className="sp-btn-icon"
+            style={{ width: 16, height: 16, fontSize: 10, marginLeft: "auto", color: "var(--sp-fg-3)", opacity: 0.5 }}
+            onClick={() => void handleDelete()}
+            title="Delete message"
+            type="button"
+          >
+            <Trash2 size={10} />
           </button>
-        ))}
-        <button className="sp-btn-icon" style={{ width: 18, height: 18, fontSize: 11, lineHeight: 1 }}
-          onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
-        {showPicker && (
-          <div style={{
-            position: "absolute", bottom: "100%", left: 0, zIndex: 100,
-            background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
-            borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
-          }}
-            onMouseLeave={() => setShowPicker(false)}>
-            {REACTION_EMOJIS.map((e) => (
-              <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
-                onClick={() => void handleReaction(e)} type="button">{e}</button>
-            ))}
-          </div>
         )}
       </div>
+      {msg.IsDeleted ? (
+        <p style={{ fontSize: 11, margin: "0 0 2px", color: "var(--sp-fg-3)", fontStyle: "italic" }}>
+          message was deleted
+        </p>
+      ) : (
+        <p style={{ fontSize: 12, margin: "0 0 2px", color: "var(--sp-fg-2)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.4 }}>
+          {msg.Text}
+        </p>
+      )}
+      {hasReactions && (
+        <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap", position: "relative" }}>
+          {Object.entries(grouped).map(([emoji, count]) => (
+            <button key={emoji} className="sp-filter-chip"
+              style={{ fontSize: 11, padding: "1px 5px", gap: 2, height: 18 }}
+              onClick={() => void handleReaction(emoji)} type="button">
+              {emoji} <span style={{ fontSize: 10 }}>{count}</span>
+            </button>
+          ))}
+          {!msg.IsDeleted && (
+            <>
+              <button className="sp-btn-icon" style={{ width: 18, height: 18, fontSize: 11, lineHeight: 1 }}
+                onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
+              {showPicker && (
+                <div style={{
+                  position: "absolute", bottom: "100%", left: 0, zIndex: 100,
+                  background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
+                  borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
+                }}
+                  onMouseLeave={() => setShowPicker(false)}>
+                  {REACTION_EMOJIS.map((e) => (
+                    <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
+                      onClick={() => void handleReaction(e)} type="button">{e}</button>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </div>
+      )}
+      {!hasReactions && !msg.IsDeleted && (
+        <div style={{ position: "relative" }}>
+          <button className="sp-btn-icon" style={{ width: 18, height: 18, fontSize: 11, lineHeight: 1 }}
+            onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
+          {showPicker && (
+            <div style={{
+              position: "absolute", bottom: "100%", left: 0, zIndex: 100,
+              background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
+              borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
+            }}
+              onMouseLeave={() => setShowPicker(false)}>
+              {REACTION_EMOJIS.map((e) => (
+                <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
+                  onClick={() => void handleReaction(e)} type="button">{e}</button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }

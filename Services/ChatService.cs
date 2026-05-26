@@ -111,6 +111,30 @@ public class ChatService(
         return dto;
     }
 
+    public async Task<GroupMessageDto?> DeleteMessageAsync(string messageId, string authorId, CancellationToken ct)
+    {
+        var message = await _messages.Find(x => x.Id == messageId).FirstOrDefaultAsync(ct);
+        if (message is null || message.AuthorId != authorId)
+            return null;
+
+        var update = Builders<GroupMessage>.Update
+            .Set(x => x.IsDeleted, true)
+            .Set(x => x.Text, null);
+
+        var updated = await _messages.FindOneAndUpdateAsync(
+            x => x.Id == messageId,
+            update,
+            new FindOneAndUpdateOptions<GroupMessage> { ReturnDocument = ReturnDocument.After },
+            ct);
+
+        if (updated is null)
+            return null;
+
+        var dto = ToDto(updated);
+        await hub.Clients.Group(updated.GroupId).SendAsync("chatMessage", dto, ct);
+        return dto;
+    }
+
     private static GroupMessageDto ToDto(GroupMessage m) => new()
     {
         Id = m.Id,
@@ -129,6 +153,7 @@ public class ChatService(
             UserName = r.UserName,
             Emoji = r.Emoji,
         }).ToList(),
+        IsDeleted = m.IsDeleted == true,
         CreatedAt = m.CreatedAt,
     };
 }

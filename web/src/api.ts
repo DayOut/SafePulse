@@ -129,6 +129,7 @@ export type GroupMessageDto = {
   EventUserName?: string | null;
   EventStatus?: string | null;
   Reactions: MessageReactionDto[];
+  IsDeleted: boolean;
   CreatedAt: string;
 };
 
@@ -404,6 +405,12 @@ export function toggleReaction(settings: AppSettings, accessToken: string, group
   return request<GroupMessageDto>(settings, `/api/groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}/reactions`, accessToken, {
     method: "POST",
     body: JSON.stringify({ Emoji: emoji }),
+  });
+}
+
+export function deleteGroupMessage(settings: AppSettings, accessToken: string, groupId: string, messageId: string) {
+  return request<void>(settings, `/api/groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}`, accessToken, {
+    method: "DELETE",
   });
 }
 

@@ -91,4 +91,18 @@ public class ChatController(
         var result = await chatService.ToggleReactionAsync(messageId, userId, user.UserName, request.Emoji, ct);
         return result is null ? NotFound() : Ok(result);
     }
+
+    [HttpDelete("{messageId}")]
+    public async Task<IActionResult> DeleteMessage(
+        string groupId,
+        string messageId,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        var result = await chatService.DeleteMessageAsync(messageId, userId, ct);
+        return result is null ? NotFound() : NoContent();
+    }
 }
