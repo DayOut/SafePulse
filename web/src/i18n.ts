@@ -167,6 +167,10 @@ const translations = {
     "set.theme": "THEME",
     "set.themeDark": "DARK",
     "set.themeLight": "LIGHT",
+    "set.chatFontSize": "CHAT FONT SIZE",
+    "set.chatFontSizeSmall": "SMALL",
+    "set.chatFontSizeMedium": "MEDIUM",
+    "set.chatFontSizeLarge": "LARGE",
     // Email verification
     "auth.checkEmail": "Check your email",
     "auth.checkEmailDesc": "We sent a verification link to {email}. Click it to activate your account.",
@@ -350,6 +354,10 @@ const translations = {
     "set.theme": "ТЕМА",
     "set.themeDark": "ТЕМНА",
     "set.themeLight": "СВІТЛА",
+    "set.chatFontSize": "РОЗМІР ШРИФТУ ЧАТУ",
+    "set.chatFontSizeSmall": "МАЛИЙ",
+    "set.chatFontSizeMedium": "СЕРЕДНІЙ",
+    "set.chatFontSizeLarge": "ВЕЛИКИЙ",
     // Email verification
     "auth.checkEmail": "Перевірте пошту",
     "auth.checkEmailDesc": "Ми надіслали посилання для підтвердження на {email}. Натисніть його, щоб активувати акаунт.",

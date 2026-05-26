@@ -38,6 +38,9 @@
   /* Fonts */
   --sp-sans: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, sans-serif;
   --sp-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  /* Chat */
+  --sp-chat-font-size: 14px;
 }
 
 :root { color-scheme: dark; }
@@ -392,6 +395,20 @@ input, textarea, select {
   letter-spacing: 0.08em;
   font-size: 9px;
   font-weight: 600;
+}
+
+/* Mobile group context bar — inside sp-header-stack, hidden on desktop */
+.sp-mobile-group-bar {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  border-bottom: 1px solid var(--sp-border);
+  background: var(--sp-surface);
+  flex: 0 0 auto;
+}
+
+@media (min-width: 900px) {
+  .sp-mobile-group-bar { display: none !important; }
 }
 
 .sp-icon-btn {
@@ -1812,10 +1829,17 @@ input, textarea, select {
     display: none !important;
   }
 
-  .sp-groups-center {
-    overflow-y: auto;
+  .sp-groups-column {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
     height: 100%;
-    padding-bottom: 80px;
+  }
+
+  .sp-groups-center {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
   }
 
   .sp-groups-right-rail {
@@ -1903,6 +1927,47 @@ input, textarea, select {
   .sp-member-table-row--urgent { background: var(--sp-help-bg); }
   .sp-member-table-row--urgent:hover { background: var(--sp-help-bg); filter: brightness(1.08); }
 }
+
+/* Mobile: bounded layout so flex children can fill remaining height correctly */
+@media (max-width: 899px) {
+  .sp-group-header { display: none !important; }
+  /* Group sub-tabs (chat/members) are rendered in the sticky header on mobile */
+  .sp-group-subtabs { display: none !important; }
+
+  .sp-groups-layout {
+    height: calc(100dvh - var(--sp-header-h, 140px));
+    overflow: hidden;
+  }
+
+  .sp-groups-column {
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+  }
+
+  .sp-groups-center {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+  }
+}
+
+/* Chat panel: clear the fixed status cluster on desktop */
+@media (min-width: 900px) {
+  .sp-chat-panel {
+    padding-bottom: 80px;
+  }
+}
+
+/* Group sub-tabs bar — sticky at top of scroll container on desktop */
+.sp-group-subtabs {
+  display: flex;
+  border-bottom: 1px solid var(--sp-border);
+  background: var(--sp-surface);
+  flex-shrink: 0;
+}
+
 
 /* ============================================================
    Desktop left rail
