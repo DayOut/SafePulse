@@ -1723,7 +1723,7 @@ function ChatPanel({
             onKeyDown={handleKeyDown}
             rows={1}
           />
-          <button className="sp-btn-primary" style={{ height: 36, padding: "0 14px", flexShrink: 0 }}
+          <button className="sp-btn-primary" style={{ width: "auto", height: 36, padding: "0 14px", flexShrink: 0 }}
             disabled={!text.trim() || isSending} onClick={() => void send(text)} type="button">
             <Send size={13} />
           </button>
