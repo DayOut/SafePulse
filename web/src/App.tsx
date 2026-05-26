@@ -43,6 +43,7 @@ import {
   createTelegramLinkCode,
   deleteGroup,
   deleteGroupMessage,
+  editGroupMessage,
   disconnectTelegram,
   getAppConfig,
   getCurrentUser,
@@ -1531,15 +1532,48 @@ function UserMessage({
   groupId: string;
 }) {
   const [showPicker, setShowPicker] = useState(false);
+  const [showMenu, setShowMenu] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editText, setEditText] = useState(msg.Text ?? "");
+  const menuRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showMenu) return;
+    function close(e: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) setShowMenu(false);
+    }
+    document.addEventListener("mousedown", close);
+    return () => document.removeEventListener("mousedown", close);
+  }, [showMenu]);
 
   async function handleReaction(emoji: string) {
     setShowPicker(false);
-    try { await toggleReaction(settings, accessToken, groupId, msg.Id, emoji); } catch { /* reaction update comes via SignalR */ }
+    try { await toggleReaction(settings, accessToken, groupId, msg.Id, emoji); } catch { /* via SignalR */ }
   }
 
   async function handleDelete() {
+    setShowMenu(false);
     if (!window.confirm("Delete this message?")) return;
-    try { await deleteGroupMessage(settings, accessToken, groupId, msg.Id); } catch { /* update comes via SignalR */ }
+    try { await deleteGroupMessage(settings, accessToken, groupId, msg.Id); } catch { /* via SignalR */ }
+  }
+
+  function startEdit() {
+    setEditText(msg.Text ?? "");
+    setEditing(true);
+    setShowMenu(false);
+  }
+
+  async function saveEdit() {
+    const trimmed = editText.trim();
+    if (!trimmed || trimmed === msg.Text) { setEditing(false); return; }
+    try { await editGroupMessage(settings, accessToken, groupId, msg.Id, trimmed); }
+    catch { /* via SignalR */ }
+    setEditing(false);
+  }
+
+  function handleEditKey(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void saveEdit(); }
+    if (e.key === "Escape") setEditing(false);
   }
 
   const grouped: Record<string, number> = {};
@@ -1552,33 +1586,82 @@ function UserMessage({
       borderLeft: `2px solid ${accent}`,
       background: isMine ? "color-mix(in srgb, var(--sp-surface) 60%, transparent)" : undefined,
     }}>
+      {/* Header row */}
       <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 1 }}>
         <span style={{ fontWeight: 700, fontSize: 11, color: "var(--sp-fg-1)" }}>{msg.AuthorName}</span>
         <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-fg-3)" }}>
           {new Date(msg.CreatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
         </span>
+        {msg.IsEdited && !msg.IsDeleted && (
+          <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-fg-3)", fontStyle: "italic" }}>(edited)</span>
+        )}
         {isMine && !msg.IsDeleted && (
-          <button
-            className="sp-btn-icon"
-            style={{ width: 16, height: 16, fontSize: 10, marginLeft: "auto", color: "var(--sp-fg-3)", opacity: 0.5 }}
-            onClick={() => void handleDelete()}
-            title="Delete message"
-            type="button"
-          >
-            <Trash2 size={10} />
-          </button>
+          <div ref={menuRef} style={{ position: "relative", marginLeft: "auto" }}>
+            <button
+              className="sp-btn-icon"
+              style={{ width: 18, height: 14, fontSize: 12, letterSpacing: 1, color: "var(--sp-fg-3)", opacity: 0.6, lineHeight: 1 }}
+              onClick={() => setShowMenu((v) => !v)}
+              type="button"
+            >···</button>
+            {showMenu && (
+              <div style={{
+                position: "absolute", top: "100%", right: 0, zIndex: 200, minWidth: 120,
+                background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
+                borderRadius: 4, overflow: "hidden",
+              }}>
+                <button
+                  className="sp-mono"
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 12px", fontSize: 11,
+                    background: "none", border: "none", cursor: "pointer", color: "var(--sp-fg-2)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--sp-hover)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  onClick={startEdit}
+                  type="button"
+                >Edit</button>
+                <button
+                  className="sp-mono"
+                  style={{ display: "block", width: "100%", textAlign: "left", padding: "7px 12px", fontSize: 11,
+                    background: "none", border: "none", cursor: "pointer", color: "var(--sp-help)" }}
+                  onMouseEnter={(e) => (e.currentTarget.style.background = "var(--sp-hover)")}
+                  onMouseLeave={(e) => (e.currentTarget.style.background = "none")}
+                  onClick={() => void handleDelete()}
+                  type="button"
+                >Delete</button>
+              </div>
+            )}
+          </div>
         )}
       </div>
+
+      {/* Body */}
       {msg.IsDeleted ? (
-        <p style={{ fontSize: 11, margin: "0 0 2px", color: "var(--sp-fg-3)", fontStyle: "italic" }}>
-          message was deleted
-        </p>
+        <p style={{ fontSize: 11, margin: "0 0 2px", color: "var(--sp-fg-3)", fontStyle: "italic" }}>message was deleted</p>
+      ) : editing ? (
+        <div style={{ marginBottom: 4 }}>
+          <textarea
+            className="sp-text-input"
+            style={{ width: "100%", resize: "none", fontSize: 12, padding: "4px 8px", lineHeight: 1.4 }}
+            value={editText}
+            onChange={(e) => setEditText(e.target.value)}
+            onKeyDown={handleEditKey}
+            rows={Math.max(1, editText.split("\n").length)}
+            autoFocus
+          />
+          <div style={{ display: "flex", gap: 6, marginTop: 4 }}>
+            <button className="sp-btn-icon" style={{ fontSize: 11, padding: "2px 10px", height: 22, width: "auto" }}
+              onClick={() => void saveEdit()} type="button">Save</button>
+            <button className="sp-btn-icon" style={{ fontSize: 11, padding: "2px 10px", height: 22, width: "auto", color: "var(--sp-fg-3)" }}
+              onClick={() => setEditing(false)} type="button">Cancel</button>
+          </div>
+        </div>
       ) : (
         <p style={{ fontSize: 12, margin: "0 0 2px", color: "var(--sp-fg-2)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.4 }}>
           {msg.Text}
         </p>
       )}
-      {hasReactions && (
+
+      {/* Reactions */}
+      {!msg.IsDeleted && (
         <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap", position: "relative" }}>
           {Object.entries(grouped).map(([emoji, count]) => (
             <button key={emoji} className="sp-filter-chip"
@@ -1587,29 +1670,6 @@ function UserMessage({
               {emoji} <span style={{ fontSize: 10 }}>{count}</span>
             </button>
           ))}
-          {!msg.IsDeleted && (
-            <>
-              <button className="sp-btn-icon" style={{ width: 18, height: 18, fontSize: 11, lineHeight: 1 }}
-                onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
-              {showPicker && (
-                <div style={{
-                  position: "absolute", bottom: "100%", left: 0, zIndex: 100,
-                  background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
-                  borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
-                }}
-                  onMouseLeave={() => setShowPicker(false)}>
-                  {REACTION_EMOJIS.map((e) => (
-                    <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
-                      onClick={() => void handleReaction(e)} type="button">{e}</button>
-                  ))}
-                </div>
-              )}
-            </>
-          )}
-        </div>
-      )}
-      {!hasReactions && !msg.IsDeleted && (
-        <div style={{ position: "relative" }}>
           <button className="sp-btn-icon" style={{ width: 18, height: 18, fontSize: 11, lineHeight: 1 }}
             onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
           {showPicker && (
@@ -1617,14 +1677,24 @@ function UserMessage({
               position: "absolute", bottom: "100%", left: 0, zIndex: 100,
               background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
               borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
-            }}
-              onMouseLeave={() => setShowPicker(false)}>
+            }} onMouseLeave={() => setShowPicker(false)}>
               {REACTION_EMOJIS.map((e) => (
                 <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
                   onClick={() => void handleReaction(e)} type="button">{e}</button>
               ))}
             </div>
           )}
+        </div>
+      )}
+      {msg.IsDeleted && hasReactions && (
+        <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap" }}>
+          {Object.entries(grouped).map(([emoji, count]) => (
+            <button key={emoji} className="sp-filter-chip"
+              style={{ fontSize: 11, padding: "1px 5px", gap: 2, height: 18 }}
+              onClick={() => void handleReaction(emoji)} type="button">
+              {emoji} <span style={{ fontSize: 10 }}>{count}</span>
+            </button>
+          ))}
         </div>
       )}
     </div>

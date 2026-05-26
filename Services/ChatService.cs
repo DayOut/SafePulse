@@ -111,6 +111,30 @@ public class ChatService(
         return dto;
     }
 
+    public async Task<GroupMessageDto?> EditMessageAsync(string messageId, string authorId, string newText, CancellationToken ct)
+    {
+        var message = await _messages.Find(x => x.Id == messageId).FirstOrDefaultAsync(ct);
+        if (message is null || message.AuthorId != authorId || message.IsDeleted == true)
+            return null;
+
+        var update = Builders<GroupMessage>.Update
+            .Set(x => x.Text, newText.Trim())
+            .Set(x => x.IsEdited, true);
+
+        var updated = await _messages.FindOneAndUpdateAsync(
+            x => x.Id == messageId,
+            update,
+            new FindOneAndUpdateOptions<GroupMessage> { ReturnDocument = ReturnDocument.After },
+            ct);
+
+        if (updated is null)
+            return null;
+
+        var dto = ToDto(updated);
+        await hub.Clients.Group(updated.GroupId).SendAsync("chatMessage", dto, ct);
+        return dto;
+    }
+
     public async Task<GroupMessageDto?> DeleteMessageAsync(string messageId, string authorId, CancellationToken ct)
     {
         var message = await _messages.Find(x => x.Id == messageId).FirstOrDefaultAsync(ct);
@@ -154,6 +178,7 @@ public class ChatService(
             Emoji = r.Emoji,
         }).ToList(),
         IsDeleted = m.IsDeleted == true,
+        IsEdited = m.IsEdited == true,
         CreatedAt = m.CreatedAt,
     };
 }

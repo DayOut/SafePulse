@@ -92,6 +92,24 @@ public class ChatController(
         return result is null ? NotFound() : Ok(result);
     }
 
+    [HttpPatch("{messageId}")]
+    public async Task<ActionResult<GroupMessageDto>> EditMessage(
+        string groupId,
+        string messageId,
+        [FromBody] SendMessageRequest request,
+        CancellationToken ct)
+    {
+        var userId = User.GetUserId();
+        if (userId is null)
+            return Unauthorized();
+
+        if (string.IsNullOrWhiteSpace(request.Text))
+            return BadRequest("Text is required");
+
+        var result = await chatService.EditMessageAsync(messageId, userId, request.Text, ct);
+        return result is null ? NotFound() : Ok(result);
+    }
+
     [HttpDelete("{messageId}")]
     public async Task<IActionResult> DeleteMessage(
         string groupId,

@@ -10,4 +10,5 @@ public interface IChatService
     Task<IReadOnlyList<GroupMessageDto>> GetMessagesAsync(string groupId, string? before, int limit, CancellationToken ct);
     Task<GroupMessageDto?> ToggleReactionAsync(string messageId, string userId, string userName, string emoji, CancellationToken ct);
     Task<GroupMessageDto?> DeleteMessageAsync(string messageId, string authorId, CancellationToken ct);
+    Task<GroupMessageDto?> EditMessageAsync(string messageId, string authorId, string newText, CancellationToken ct);
 }

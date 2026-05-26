@@ -19,6 +19,7 @@ public class GroupMessage
     public string? EventStatus { get; set; }
     public List<MessageReaction> Reactions { get; set; } = [];
     public bool? IsDeleted { get; set; }
+    public bool? IsEdited { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
