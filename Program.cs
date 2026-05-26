@@ -140,6 +140,8 @@ services.AddScoped<IGroupNotificationBuilder, GroupNotificationBuilder>();
 services.AddScoped<IGroupNotifier, TelegramGroupNotifier>();
 services.AddScoped<IUserStatusChangedEventHandler, SignalRUserNotifier>();
 services.AddScoped<IUserStatusChangedEventHandler, TelegramUserNotifier>();
+services.AddScoped<IUserStatusChangedEventHandler, ChatSystemMessageHandler>();
+services.AddScoped<IChatService, ChatService>();
 services.AddScoped<ITelegramTextFormatter, TelegramTextFormatter>();
 services.AddScoped<ITelegramCommandDispatcher, TelegramCommandDispatcher>();
 services.AddHostedService<FakeStatusSimulatorHostedService>();

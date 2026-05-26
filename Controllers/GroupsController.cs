@@ -33,6 +33,7 @@ public class GroupsController(
     IOptions<AppOptions> appOptions,
     IOptions<TelegramOptions> telegramOptions,
     IAppLocalizer localizer,
+    IChatService chatService,
     ILogger<GroupsController> logger) : ControllerBase
 {
     private readonly AppOptions _appOptions = appOptions.Value;
@@ -245,6 +246,7 @@ public class GroupsController(
         };
 
         await statusHub.Clients.Group(group.Id).SendAsync("groupStatusRequested", dto, ct);
+        await chatService.AddSystemMessageAsync(group.Id, Models.SystemEventType.StatusRequested, requester.Id, requester.UserName, null, ct);
 
         _ = ProcessStatusRequestSideEffectsAsync(group.Id, group.Name, requester.UserName);
 

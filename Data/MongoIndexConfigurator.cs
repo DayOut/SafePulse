@@ -18,6 +18,7 @@ public static class MongoIndexConfigurator
         await ConfigureGroupStatusRequestIndexesAsync(db);
         await ConfigureTelegramStatusMessageIndexesAsync(db);
         await ConfigureEmailVerificationTokenIndexesAsync(db);
+        await ConfigureGroupMessageIndexesAsync(db);
     }
 
     private static async Task ConfigureUserIndexesAsync(IMongoDatabase db)
@@ -252,6 +253,20 @@ public static class MongoIndexConfigurator
                 })
         };
 
+        await collection.Indexes.CreateManyAsync(indexes);
+    }
+
+    private static async Task ConfigureGroupMessageIndexesAsync(IMongoDatabase db)
+    {
+        var collection = db.GetCollection<GroupMessage>("groupMessages");
+        var indexes = new List<CreateIndexModel<GroupMessage>>
+        {
+            new(
+                Builders<GroupMessage>.IndexKeys
+                    .Ascending(x => x.GroupId)
+                    .Descending(x => x.CreatedAt),
+                new CreateIndexOptions { Name = "idx_groupMessages_groupId_createdAt" }),
+        };
         await collection.Indexes.CreateManyAsync(indexes);
     }
 

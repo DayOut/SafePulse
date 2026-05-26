@@ -1,11 +1,12 @@
 import * as signalR from "@microsoft/signalr";
-import type { AppSettings, GroupStatusRequestedDto, StatusChangedDto } from "./api";
+import type { AppSettings, GroupMessageDto, GroupStatusRequestedDto, StatusChangedDto } from "./api";
 
 export function createStatusConnection(
   settings: AppSettings,
   accessToken: string,
   onStatusChanged: (message: StatusChangedDto) => void,
   onGroupStatusRequested: (message: GroupStatusRequestedDto) => void,
+  onChatMessage: (message: GroupMessageDto) => void,
   onStateChanged: (state: string) => void,
   onClosed: () => void,
 ) {
@@ -18,6 +19,8 @@ export function createStatusConnection(
 
   connection.on("statusChanged", onStatusChanged);
   connection.on("groupStatusRequested", onGroupStatusRequested);
+  connection.on("chatMessage", onChatMessage);
+  connection.on("messageReactionUpdated", onChatMessage);
   connection.onreconnecting(() => onStateChanged("Reconnecting"));
   connection.onreconnected(async () => {
     onStateChanged("Connected");
