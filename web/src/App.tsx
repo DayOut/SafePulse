@@ -1482,10 +1482,10 @@ function SystemMessage({ msg }: { msg: GroupMessageDto }) {
 
   if (msg.EventType === "StatusRequested") {
     return (
-      <div style={{ padding: "5px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+      <div style={{ padding: "3px 14px", display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
-        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)", letterSpacing: "0.06em" }}>
-          <Activity size={9} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} />
+        <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-shelter)", letterSpacing: "0.06em" }}>
+          <Activity size={8} style={{ display: "inline", verticalAlign: "middle", marginRight: 3 }} />
           {msg.EventUserName} {i18nT("chat.statusRequested", lang)}
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
@@ -1501,22 +1501,16 @@ function SystemMessage({ msg }: { msg: GroupMessageDto }) {
   const isNeedHelp = msg.EventStatus === "NeedHelp";
 
   return (
-    <div style={{ padding: "3px 14px", background: isNeedHelp ? "color-mix(in srgb, var(--sp-help) 10%, transparent)" : undefined }}>
+    <div style={{ padding: "2px 14px", background: isNeedHelp ? "color-mix(in srgb, var(--sp-help) 10%, transparent)" : undefined }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
-        <span className="sp-mono" style={{ fontSize: 10, color: statusColor, letterSpacing: "0.06em" }}>
-          <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, display: "inline-block", marginRight: 4, verticalAlign: "middle" }} />
+        <span className="sp-mono" style={{ fontSize: 9, color: statusColor, letterSpacing: "0.06em" }}>
+          <span style={{ width: 5, height: 5, borderRadius: "50%", background: statusColor, display: "inline-block", marginRight: 3, verticalAlign: "middle" }} />
           {msg.EventUserName} {i18nT("chat.statusChanged", lang)} {msg.EventStatus?.toUpperCase()}
+          {isNeedHelp && <span style={{ marginLeft: 6, letterSpacing: "0.12em" }}>· {i18nT("chat.needHelpBanner", lang)}</span>}
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
       </div>
-      {isNeedHelp && (
-        <div style={{ textAlign: "center", marginTop: 1 }}>
-          <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-help)", letterSpacing: "0.12em" }}>
-            {i18nT("chat.needHelpBanner", lang)}
-          </span>
-        </div>
-      )}
     </div>
   );
 }
@@ -1543,29 +1537,28 @@ function UserMessage({
 
   return (
     <div style={{
-      padding: "4px 14px 4px 17px",
-      borderLeft: `3px solid ${accent}`,
-      marginBottom: 2,
+      padding: "2px 14px 2px 16px",
+      borderLeft: `2px solid ${accent}`,
       background: isMine ? "color-mix(in srgb, var(--sp-surface) 60%, transparent)" : undefined,
     }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-        <span style={{ fontWeight: 700, fontSize: 12, color: "var(--sp-fg-1)" }}>{msg.AuthorName}</span>
-        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 6, marginBottom: 1 }}>
+        <span style={{ fontWeight: 700, fontSize: 11, color: "var(--sp-fg-1)" }}>{msg.AuthorName}</span>
+        <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-fg-3)" }}>
           {new Date(msg.CreatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
         </span>
       </div>
-      <p style={{ fontSize: 13, margin: "0 0 4px", color: "var(--sp-fg-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+      <p style={{ fontSize: 12, margin: "0 0 2px", color: "var(--sp-fg-2)", whiteSpace: "pre-wrap", wordBreak: "break-word", lineHeight: 1.4 }}>
         {msg.Text}
       </p>
-      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", position: "relative" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 3, flexWrap: "wrap", position: "relative" }}>
         {Object.entries(grouped).map(([emoji, count]) => (
           <button key={emoji} className="sp-filter-chip"
-            style={{ fontSize: 12, padding: "2px 7px", gap: 3 }}
+            style={{ fontSize: 11, padding: "1px 5px", gap: 2, height: 18 }}
             onClick={() => void handleReaction(emoji)} type="button">
-            {emoji} <span style={{ fontSize: 11 }}>{count}</span>
+            {emoji} <span style={{ fontSize: 10 }}>{count}</span>
           </button>
         ))}
-        <button className="sp-btn-icon" style={{ width: 22, height: 22, fontSize: 13, lineHeight: 1 }}
+        <button className="sp-btn-icon" style={{ width: 18, height: 18, fontSize: 11, lineHeight: 1 }}
           onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
         {showPicker && (
           <div style={{
@@ -1702,7 +1695,7 @@ function ChatPanel({
         )}
         {items.map((item, i) =>
           item.type === "divider" ? (
-            <div key={`d${i}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }}>
+            <div key={`d${i}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 14px" }}>
               <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
               <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>{item.label}</span>
               <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
