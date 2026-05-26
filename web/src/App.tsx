@@ -1506,7 +1506,7 @@ function SystemMessage({ msg }: { msg: GroupMessageDto }) {
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
         <span className="sp-mono" style={{ fontSize: 9, color: statusColor, letterSpacing: "0.06em" }}>
           <span style={{ width: 5, height: 5, borderRadius: "50%", background: statusColor, display: "inline-block", marginRight: 3, verticalAlign: "middle" }} />
-          {msg.EventUserName} {i18nT("chat.statusChanged", lang)} {msg.EventStatus?.toUpperCase()}
+          {msg.EventUserName} {i18nT("chat.statusChanged", lang)} {msg.EventStatus ? statusLabel(msg.EventStatus as UserStatus, lang).toUpperCase() : ""}
           {isNeedHelp && <span style={{ marginLeft: 6, letterSpacing: "0.12em" }}>· {i18nT("chat.needHelpBanner", lang)}</span>}
         </span>
         <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
