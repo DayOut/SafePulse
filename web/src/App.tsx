@@ -1477,7 +1477,7 @@ function GroupsPage({
 }
 
 // ── Chat components ────────────────────────────────────────────────
-const REACTION_EMOJIS = ["👍", "❤️", "✅", "🙏", "💪"];
+const REACTION_EMOJIS = ["👍", "👎", "❤️", "😂", "😮", "😢", "😡", "✅", "🙏", "💪", "🔥", "👀", "🫡", "💯", "🚀"];
 
 function SystemMessage({ msg }: { msg: GroupMessageDto }) {
   const lang = useContext(LanguageContext);
@@ -1676,7 +1676,7 @@ function UserMessage({
             <div style={{
               position: "absolute", bottom: "100%", left: 0, zIndex: 100,
               background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
-              borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
+              borderRadius: 4, padding: "4px 6px", display: "flex", flexWrap: "wrap", gap: 2, maxWidth: 220,
             }} onMouseLeave={() => setShowPicker(false)}>
               {REACTION_EMOJIS.map((e) => (
                 <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
