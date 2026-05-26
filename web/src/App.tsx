@@ -3,6 +3,7 @@ import {
   Activity,
   Bell,
   CheckCircle2,
+  ChevronLeft,
   Copy,
   DoorOpen,
   Link,
@@ -1223,6 +1224,7 @@ function GroupsPage({
   const [groupName, setGroupName] = useState("");
   const [groupSearch, setGroupSearch] = useState("");
   const [selectedGroupId, setSelectedGroupId] = useState<string | null>(initialSelectedGroupId);
+  const [rightRailOpen, setRightRailOpen] = useState(false);
 
   useEffect(() => {
     if (openGroupId) setSelectedGroupId(openGroupId);
@@ -1310,7 +1312,7 @@ function GroupsPage({
   }
 
   return (
-    <div className="sp-groups-layout">
+    <div className={`sp-groups-layout${rightRailOpen ? " sp-groups-layout--rail-open" : ""}`}>
       {/* ── Left rail: group list ──────────────────────────────────── */}
       <div className="sp-groups-rail">
         {/* Rail header */}
@@ -1410,18 +1412,28 @@ function GroupsPage({
 
       {/* ── Right rail (desktop only) ──────────────────────────────── */}
       <div className="sp-groups-right-rail">
-        {selectedGroup && (
-          <GroupRightRail
-            group={selectedGroup}
-            canManage={selectedGroup.OwnerId === currentUserId}
-            members={selectedGroup.Members}
-            latestInvite={latestInvite}
-            isCreatingInvite={createInviteMutation.isPending}
-            createInviteError={createInviteMutation.error?.message}
-            onCreateInvite={() => createInviteMutation.mutate()}
-            onAddMember={(userId) => addMemberMutation.mutate(userId)}
-            onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
-          />
+        <button
+          className="sp-right-rail-toggle"
+          onClick={() => setRightRailOpen((v) => !v)}
+          title={rightRailOpen ? "Collapse panel" : "Expand panel"}
+          type="button"
+        >
+          {rightRailOpen ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
+        </button>
+        {rightRailOpen && selectedGroup && (
+          <div className="sp-right-rail-content">
+            <GroupRightRail
+              group={selectedGroup}
+              canManage={selectedGroup.OwnerId === currentUserId}
+              members={selectedGroup.Members}
+              latestInvite={latestInvite}
+              isCreatingInvite={createInviteMutation.isPending}
+              createInviteError={createInviteMutation.error?.message}
+              onCreateInvite={() => createInviteMutation.mutate()}
+              onAddMember={(userId) => addMemberMutation.mutate(userId)}
+              onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
+            />
+          </div>
         )}
       </div>
 

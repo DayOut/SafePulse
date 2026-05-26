@@ -1670,6 +1670,13 @@ input, textarea, select {
   display: none;
 }
 
+.sp-right-rail-toggle {
+  display: none;
+}
+.sp-right-rail-content {
+  display: none;
+}
+
 .sp-groups-rail-row {
   padding: 12px 14px;
   border-bottom: 1px solid var(--sp-border);
@@ -1747,9 +1754,13 @@ input, textarea, select {
   /* ── 3-column grid ── */
   .sp-groups-layout {
     display: grid;
-    grid-template-columns: 280px 1fr 320px;
+    grid-template-columns: 280px 1fr 28px;
     height: calc(100dvh - 58px);
     overflow: hidden;
+    transition: grid-template-columns 200ms ease;
+  }
+  .sp-groups-layout--rail-open {
+    grid-template-columns: 280px 1fr 320px;
   }
 
   .sp-groups-rail {
@@ -1761,18 +1772,47 @@ input, textarea, select {
   .sp-groups-center {
     overflow-y: auto;
     height: 100%;
-    padding-bottom: 140px;
+    padding-bottom: 80px;
   }
 
   .sp-groups-right-rail {
     display: flex;
     flex-direction: column;
-    gap: 18px;
     border-left: 1px solid var(--sp-border);
-    padding: 20px;
+    overflow: hidden;
+    height: 100%;
+    position: relative;
+  }
+
+  .sp-right-rail-toggle {
+    position: absolute;
+    top: 50%;
+    left: 0;
+    transform: translateY(-50%);
+    width: 28px;
+    height: 48px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: var(--sp-surface);
+    border: none;
+    border-right: 1px solid var(--sp-border);
+    cursor: pointer;
+    color: var(--sp-fg-3);
+    flex-shrink: 0;
+    z-index: 1;
+  }
+  .sp-right-rail-toggle:hover { color: var(--sp-fg); background: var(--sp-hover); }
+
+  .sp-right-rail-content {
+    margin-left: 28px;
     overflow-y: auto;
     height: 100%;
-    padding-bottom: 140px;
+    padding: 20px;
+    padding-bottom: 80px;
+    display: flex;
+    flex-direction: column;
+    gap: 18px;
   }
 
   /* ── Group header / action row ── */
