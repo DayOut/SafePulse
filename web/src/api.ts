@@ -108,6 +108,30 @@ export type TelegramLinkStatusDto = {
   ExpiresAt: string;
 };
 
+export type MessageKind = "User" | "System";
+export type SystemEventType = "StatusChanged" | "StatusRequested";
+
+export type MessageReactionDto = {
+  UserId: string;
+  UserName: string;
+  Emoji: string;
+};
+
+export type GroupMessageDto = {
+  Id: string;
+  GroupId: string;
+  Kind: MessageKind;
+  AuthorId?: string | null;
+  AuthorName?: string | null;
+  Text?: string | null;
+  EventType?: SystemEventType | null;
+  EventUserId?: string | null;
+  EventUserName?: string | null;
+  EventStatus?: string | null;
+  Reactions: MessageReactionDto[];
+  CreatedAt: string;
+};
+
 export type GroupStatusRequestedDto = {
   Id: string;
   GroupId: string;
@@ -360,6 +384,26 @@ export function createInvite(settings: AppSettings, accessToken: string, groupId
   return request<InviteDto>(settings, `/api/groups/${encodeURIComponent(groupId)}/invites`, accessToken, {
     method: "POST",
     body: JSON.stringify({ Note: note || null }),
+  });
+}
+
+export function getGroupMessages(settings: AppSettings, accessToken: string, groupId: string, before?: string, limit = 50) {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (before) params.set("before", before);
+  return request<GroupMessageDto[]>(settings, `/api/groups/${encodeURIComponent(groupId)}/messages?${params}`, accessToken);
+}
+
+export function sendGroupMessage(settings: AppSettings, accessToken: string, groupId: string, text: string) {
+  return request<GroupMessageDto>(settings, `/api/groups/${encodeURIComponent(groupId)}/messages`, accessToken, {
+    method: "POST",
+    body: JSON.stringify({ Text: text }),
+  });
+}
+
+export function toggleReaction(settings: AppSettings, accessToken: string, groupId: string, messageId: string, emoji: string) {
+  return request<GroupMessageDto>(settings, `/api/groups/${encodeURIComponent(groupId)}/messages/${encodeURIComponent(messageId)}/reactions`, accessToken, {
+    method: "POST",
+    body: JSON.stringify({ Emoji: emoji }),
   });
 }
 

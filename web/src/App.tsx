@@ -25,6 +25,7 @@ import type { HubConnection } from "@microsoft/signalr";
 import {
   AppSettings,
   AuthSession,
+  GroupMessageDto,
   GroupStatusRequestedDto,
   GroupMemberDto,
   MyGroupDto,
@@ -43,6 +44,7 @@ import {
   disconnectTelegram,
   getAppConfig,
   getCurrentUser,
+  getGroupMessages,
   getMyGroups,
   getTelegramLinkStatus,
   loginWithPassword,
@@ -54,7 +56,9 @@ import {
   removeGroupMember,
   requestGroupStatusUpdate,
   resolveInvite,
+  sendGroupMessage,
   setPassword,
+  toggleReaction,
   updateGroupMemberRole,
   updateLanguage,
   updateNotifications,
@@ -144,6 +148,7 @@ export default function App() {
   const [recentStatusChanges, setRecentStatusChanges] = useState<StatusChangedDto[]>([]);
   const [emailVerifiedToast, setEmailVerifiedToast] = useState(false);
   const [showLogoutModal, setShowLogoutModal] = useState(false);
+  const [lastChatMessage, setLastChatMessage] = useState<GroupMessageDto | null>(null);
   const statusConnectionRef = useRef<HubConnection | null>(null);
 
   useEffect(() => {
@@ -347,6 +352,7 @@ export default function App() {
         setStatusRequest(message);
         playStatusRequestSignal();
       },
+      (msg) => setLastChatMessage(msg),
       setConnectionState,
       () => {
         if (isCancelled) return;
@@ -475,6 +481,7 @@ export default function App() {
               currentUserId={session.User.Id}
               initialSelectedGroupId={initialGroupId}
               openGroupId={requestedGroupId}
+              lastChatMessage={lastChatMessage}
               onJoined={async () => {
                 if (statusConnectionRef.current?.state === "Connected")
                   await statusConnectionRef.current.invoke("JoinUserGroups");
@@ -1200,6 +1207,7 @@ function GroupsPage({
   currentUserId,
   initialSelectedGroupId,
   openGroupId,
+  lastChatMessage,
   onJoined,
 }: {
   settings: AppSettings;
@@ -1207,6 +1215,7 @@ function GroupsPage({
   currentUserId: string;
   initialSelectedGroupId: string | null;
   openGroupId: string | null;
+  lastChatMessage: GroupMessageDto | null;
   onJoined: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
@@ -1387,6 +1396,10 @@ function GroupsPage({
             onAddMember={(userId) => addMemberMutation.mutate(userId)}
             onDeleteGroup={selectedGroup.OwnerId === currentUserId ? () => setDeleteTarget(selectedGroup) : undefined}
             memberActionError={addMemberMutation.error?.message ?? removeMemberMutation.error?.message ?? updateRoleMutation.error?.message}
+            settings={settings}
+            accessToken={accessToken}
+            currentUserId={currentUserId}
+            lastChatMessage={lastChatMessage}
           />
         ) : (
           <div style={{ padding: "20px 24px" }}>
@@ -1449,6 +1462,277 @@ function GroupsPage({
   );
 }
 
+// ── Chat components ────────────────────────────────────────────────
+const REACTION_EMOJIS = ["👍", "❤️", "✅", "🙏", "💪"];
+
+function SystemMessage({ msg }: { msg: GroupMessageDto }) {
+  const lang = useContext(LanguageContext);
+
+  if (msg.EventType === "StatusRequested") {
+    return (
+      <div style={{ padding: "5px 14px", display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)", letterSpacing: "0.06em" }}>
+          <Activity size={9} style={{ display: "inline", verticalAlign: "middle", marginRight: 4 }} />
+          {msg.EventUserName} {i18nT("chat.statusRequested", lang)}
+        </span>
+        <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+      </div>
+    );
+  }
+
+  const statusColor =
+    msg.EventStatus === "Safe" ? "var(--sp-safe)"
+    : msg.EventStatus === "InShelter" ? "var(--sp-shelter)"
+    : msg.EventStatus === "NeedHelp" ? "var(--sp-help)"
+    : "var(--sp-unknown)";
+  const isNeedHelp = msg.EventStatus === "NeedHelp";
+
+  return (
+    <div style={{ padding: "3px 14px", background: isNeedHelp ? "color-mix(in srgb, var(--sp-help) 10%, transparent)" : undefined }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+        <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+        <span className="sp-mono" style={{ fontSize: 10, color: statusColor, letterSpacing: "0.06em" }}>
+          <span style={{ width: 6, height: 6, borderRadius: "50%", background: statusColor, display: "inline-block", marginRight: 4, verticalAlign: "middle" }} />
+          {msg.EventUserName} {i18nT("chat.statusChanged", lang)} {msg.EventStatus?.toUpperCase()}
+        </span>
+        <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+      </div>
+      {isNeedHelp && (
+        <div style={{ textAlign: "center", marginTop: 1 }}>
+          <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-help)", letterSpacing: "0.12em" }}>
+            {i18nT("chat.needHelpBanner", lang)}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UserMessage({
+  msg, accent, isMine, settings, accessToken, groupId,
+}: {
+  msg: GroupMessageDto;
+  accent: string;
+  isMine: boolean;
+  settings: AppSettings;
+  accessToken: string;
+  groupId: string;
+}) {
+  const [showPicker, setShowPicker] = useState(false);
+
+  async function handleReaction(emoji: string) {
+    setShowPicker(false);
+    try { await toggleReaction(settings, accessToken, groupId, msg.Id, emoji); } catch { /* reaction update comes via SignalR */ }
+  }
+
+  const grouped: Record<string, number> = {};
+  for (const r of msg.Reactions ?? []) grouped[r.Emoji] = (grouped[r.Emoji] ?? 0) + 1;
+
+  return (
+    <div style={{
+      padding: "4px 14px 4px 17px",
+      borderLeft: `3px solid ${accent}`,
+      marginBottom: 2,
+      background: isMine ? "color-mix(in srgb, var(--sp-surface) 60%, transparent)" : undefined,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+        <span style={{ fontWeight: 700, fontSize: 12, color: "var(--sp-fg-1)" }}>{msg.AuthorName}</span>
+        <span className="sp-mono" style={{ fontSize: 10, color: "var(--sp-fg-3)" }}>
+          {new Date(msg.CreatedAt).toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" })}
+        </span>
+      </div>
+      <p style={{ fontSize: 13, margin: "0 0 4px", color: "var(--sp-fg-2)", whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+        {msg.Text}
+      </p>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, flexWrap: "wrap", position: "relative" }}>
+        {Object.entries(grouped).map(([emoji, count]) => (
+          <button key={emoji} className="sp-filter-chip"
+            style={{ fontSize: 12, padding: "2px 7px", gap: 3 }}
+            onClick={() => void handleReaction(emoji)} type="button">
+            {emoji} <span style={{ fontSize: 11 }}>{count}</span>
+          </button>
+        ))}
+        <button className="sp-btn-icon" style={{ width: 22, height: 22, fontSize: 13, lineHeight: 1 }}
+          onClick={() => setShowPicker((v) => !v)} title="React" type="button">+</button>
+        {showPicker && (
+          <div style={{
+            position: "absolute", bottom: "100%", left: 0, zIndex: 100,
+            background: "var(--sp-surface)", border: "1px solid var(--sp-border)",
+            borderRadius: 4, padding: "4px 6px", display: "flex", gap: 4,
+          }}
+            onMouseLeave={() => setShowPicker(false)}>
+            {REACTION_EMOJIS.map((e) => (
+              <button key={e} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 17, padding: 2 }}
+                onClick={() => void handleReaction(e)} type="button">{e}</button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function ChatPanel({
+  settings, accessToken, groupId, currentUserId, members, lastChatMessage,
+}: {
+  settings: AppSettings;
+  accessToken: string;
+  groupId: string;
+  currentUserId: string;
+  members: GroupMemberDto[];
+  lastChatMessage: GroupMessageDto | null;
+}) {
+  const t = useT();
+  const [messages, setMessages] = useState<GroupMessageDto[]>([]);
+  const [text, setText] = useState("");
+  const [isLoading, setIsLoading] = useState(true);
+  const [hasMore, setHasMore] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [isSending, setIsSending] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const LIMIT = 50;
+
+  useEffect(() => {
+    setIsLoading(true);
+    setMessages([]);
+    getGroupMessages(settings, accessToken, groupId, undefined, LIMIT)
+      .then((msgs) => { setMessages(msgs); setHasMore(msgs.length === LIMIT); })
+      .catch(() => {})
+      .finally(() => setIsLoading(false));
+  }, [settings, accessToken, groupId]);
+
+  useEffect(() => {
+    if (!isLoading) bottomRef.current?.scrollIntoView();
+  }, [isLoading]);
+
+  useEffect(() => {
+    if (!lastChatMessage || lastChatMessage.GroupId !== groupId) return;
+    setMessages((prev) => {
+      const idx = prev.findIndex((m) => m.Id === lastChatMessage.Id);
+      if (idx >= 0) { const next = [...prev]; next[idx] = lastChatMessage; return next; }
+      return [...prev, lastChatMessage];
+    });
+    setTimeout(() => bottomRef.current?.scrollIntoView({ behavior: "smooth" }), 50);
+  }, [lastChatMessage, groupId]);
+
+  async function loadMore() {
+    if (!messages.length || isLoadingMore) return;
+    setIsLoadingMore(true);
+    try {
+      const older = await getGroupMessages(settings, accessToken, groupId, messages[0].Id, LIMIT);
+      setMessages((prev) => [...older, ...prev]);
+      setHasMore(older.length === LIMIT);
+    } catch { /* ignore */ } finally { setIsLoadingMore(false); }
+  }
+
+  async function send(textToSend: string) {
+    const trimmed = textToSend.trim();
+    if (!trimmed || isSending) return;
+    setIsSending(true);
+    setText("");
+    try { await sendGroupMessage(settings, accessToken, groupId, trimmed); }
+    catch { setText(trimmed); }
+    finally { setIsSending(false); }
+  }
+
+  function handleKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); void send(text); }
+  }
+
+  function memberAccent(userId: string | null | undefined): string {
+    const s = members.find((m) => m.Id === userId)?.Status ?? "Unknown";
+    return s === "Safe" ? "var(--sp-safe)" : s === "InShelter" ? "var(--sp-shelter)" : s === "NeedHelp" ? "var(--sp-help)" : "var(--sp-unknown)";
+  }
+
+  function dayLabel(dateStr: string): string {
+    const d = new Date(dateStr);
+    const today = new Date();
+    const yesterday = new Date(today); yesterday.setDate(today.getDate() - 1);
+    if (d.toDateString() === today.toDateString()) return "TODAY";
+    if (d.toDateString() === yesterday.toDateString()) return "YESTERDAY";
+    return d.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }).toUpperCase();
+  }
+
+  const items: Array<{ type: "divider"; label: string } | { type: "msg"; msg: GroupMessageDto }> = [];
+  let lastDay = "";
+  for (const msg of messages) {
+    const day = dayLabel(msg.CreatedAt);
+    if (day !== lastDay) { items.push({ type: "divider", label: day }); lastDay = day; }
+    items.push({ type: "msg", msg });
+  }
+
+  const quickReplies = [t("chat.quickOnMyWay"), t("chat.quickCopy"), t("chat.quickConfirm")];
+
+  if (isLoading) {
+    return (
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 40 }}>
+        <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>LOADING…</span>
+      </div>
+    );
+  }
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", height: "100%", minHeight: 0 }}>
+      <div style={{ flex: 1, overflowY: "auto", padding: "0 0 4px" }}>
+        {hasMore && (
+          <div style={{ padding: "8px 14px", textAlign: "center" }}>
+            <button className="sp-btn-secondary" style={{ fontSize: 11 }}
+              onClick={() => void loadMore()} disabled={isLoadingMore} type="button">
+              {isLoadingMore ? "…" : t("chat.loadMore")}
+            </button>
+          </div>
+        )}
+        {messages.length === 0 && (
+          <div style={{ padding: "40px 14px", textAlign: "center" }}>
+            <span className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)" }}>No messages yet.</span>
+          </div>
+        )}
+        {items.map((item, i) =>
+          item.type === "divider" ? (
+            <div key={`d${i}`} style={{ display: "flex", alignItems: "center", gap: 8, padding: "10px 14px" }}>
+              <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+              <span className="sp-mono" style={{ fontSize: 9, color: "var(--sp-fg-3)", letterSpacing: "0.1em" }}>{item.label}</span>
+              <span style={{ flex: 1, height: 1, background: "var(--sp-border)" }} />
+            </div>
+          ) : item.msg.Kind === "System" ? (
+            <SystemMessage key={item.msg.Id} msg={item.msg} />
+          ) : (
+            <UserMessage key={item.msg.Id} msg={item.msg}
+              accent={memberAccent(item.msg.AuthorId)}
+              isMine={item.msg.AuthorId === currentUserId}
+              settings={settings} accessToken={accessToken} groupId={groupId} />
+          )
+        )}
+        <div ref={bottomRef} />
+      </div>
+      <div style={{ borderTop: "1px solid var(--sp-border)", padding: "8px 14px", flexShrink: 0 }}>
+        <div style={{ display: "flex", gap: 6, marginBottom: 6 }}>
+          {quickReplies.map((qr) => (
+            <button key={qr} className="sp-filter-chip" style={{ fontSize: 11 }}
+              onClick={() => void send(qr)} disabled={isSending} type="button">{qr}</button>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 6, alignItems: "flex-end" }}>
+          <textarea
+            className="sp-text-input"
+            style={{ flex: 1, resize: "none", height: 36, fontSize: 13, padding: "8px 10px", lineHeight: 1.4 }}
+            placeholder={t("chat.placeholder")}
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            rows={1}
+          />
+          <button className="sp-btn-primary" style={{ height: 36, padding: "0 14px", flexShrink: 0 }}
+            disabled={!text.trim() || isSending} onClick={() => void send(text)} type="button">
+            <Send size={13} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Group details ──────────────────────────────────────────────────
 function GroupDetails({
   group,
@@ -1466,6 +1750,10 @@ function GroupDetails({
   onAddMember: _onAddMember,
   onDeleteGroup,
   memberActionError,
+  settings,
+  accessToken,
+  currentUserId,
+  lastChatMessage,
 }: {
   group: MyGroupDto;
   canManage: boolean;
@@ -1482,8 +1770,13 @@ function GroupDetails({
   onAddMember: (userId: string) => void;
   onDeleteGroup?: () => void;
   memberActionError?: string;
+  settings: AppSettings;
+  accessToken: string;
+  currentUserId: string;
+  lastChatMessage: GroupMessageDto | null;
 }) {
   const t = useT();
+  const [activeGroupTab, setActiveGroupTab] = useState<"chat" | "members">("chat");
   const [statusFilter, setStatusFilter] = useState<UserStatus | "All">("All");
   const [memberSearch, setMemberSearch] = useState("");
 
@@ -1503,7 +1796,7 @@ function GroupDetails({
   }, [members, statusFilter, memberSearch]);
 
   return (
-    <div>
+    <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
       {/* Group header */}
       <div className="sp-group-header">
         <div className="sp-group-header-top">
@@ -1551,122 +1844,160 @@ function GroupDetails({
         </div>
       </div>
 
-      {/* Mobile-only: action row + invite + add member */}
-      <div className="sp-mobile-only">
-        <div className="sp-action-row">
-          <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
-            <Send size={13} /> {t("grp.requestStatus")}
+      {/* Tab bar */}
+      <div style={{ display: "flex", borderBottom: "1px solid var(--sp-border)", background: "var(--sp-surface)", flexShrink: 0 }}>
+        {(["chat", "members"] as const).map((tab) => (
+          <button
+            key={tab}
+            type="button"
+            onClick={() => setActiveGroupTab(tab)}
+            className="sp-mono"
+            style={{
+              flex: 1, padding: "8px 0", fontSize: 10, fontWeight: 700, letterSpacing: "0.1em",
+              background: "none", border: "none", cursor: "pointer",
+              borderBottom: activeGroupTab === tab ? "2px solid var(--sp-safe)" : "2px solid transparent",
+              color: activeGroupTab === tab ? "var(--sp-safe)" : "var(--sp-fg-3)",
+            }}
+          >
+            {tab === "chat" ? t("chat.tab") : t("chat.membersTab")}
           </button>
-          {canManage && (
-            <button className="sp-btn-icon" onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite" type="button">
-              <Copy size={14} />
-            </button>
-          )}
-        </div>
-        {latestStatusRequest && (
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
-            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
-          </div>
-        )}
-        {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{requestStatusError}</div>}
-        {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{memberActionError}</div>}
-        {latestInvite && (
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)", display: "flex", flexDirection: "column", gap: 6 }}>
-            <div className="sp-invite-box">
-              <div className="sp-invite-url">{latestInvite.apiUrl}</div>
-              <div className="sp-invite-actions">
-                <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
-                  onClick={() => { void navigator.clipboard.writeText(latestInvite.apiUrl); }} type="button">
-                  <Copy size={13} />
-                  <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Copy</span>
-                </button>
-              </div>
-            </div>
-            <div className="sp-invite-box">
-              <div className="sp-invite-url">{latestInvite.telegramUrl}</div>
-              <div className="sp-invite-actions">
-                <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
-                  onClick={() => { void navigator.clipboard.writeText(latestInvite.telegramUrl); }} type="button">
-                  <Copy size={13} />
-                  <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Telegram</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        )}
-        {canManage && (
-          <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
-            <button className="sp-btn-secondary" style={{ width: "100%", justifyContent: "center" }}
-              disabled={isCreatingInvite} onClick={onCreateInvite} type="button">
-              <Copy size={13} /> GENERATE LINKS
-            </button>
-          </div>
-        )}
-      </div>
-
-      {/* Desktop-only: inline error messages */}
-      <div className="sp-desktop-only" style={{ flexDirection: "column", gap: 0 }}>
-        {latestStatusRequest && (
-          <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--sp-border)" }}>
-            <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
-          </div>
-        )}
-        {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 24px" }}>{requestStatusError}</div>}
-        {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 24px" }}>{memberActionError}</div>}
-      </div>
-
-      {/* Filter chips */}
-      <div className="sp-filter-chips">
-        <FilterChip label={t("grp.all")}     count={members.length} active={statusFilter === "All"}       onClick={() => setStatusFilter("All")} />
-        <FilterChip label={t("grp.help")}    count={bd.NeedHelp}    status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
-        <FilterChip label={t("grp.shelter")} count={bd.InShelter}   status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
-        <FilterChip label={t("grp.safe")}    count={bd.Safe}        status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
-        <FilterChip label={t("grp.unknown")} count={bd.Unknown}     status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
-        {/* Search input */}
-        <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
-          <input
-            className="sp-text-input"
-            style={{ height: 28, fontSize: 11, padding: "0 8px", width: 160 }}
-            placeholder={t("grp.searchMembers")}
-            value={memberSearch}
-            onChange={(e) => setMemberSearch(e.target.value)}
-          />
-          {memberSearch && (
-            <button className="sp-btn-icon" style={{ padding: 4 }} onClick={() => setMemberSearch("")} type="button">
-              <X size={12} />
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* Desktop: member table header */}
-      <div className="sp-member-table-head">
-        <span />
-        <span>{t("grp.colName")}</span>
-        <span>{t("grp.colRole")}</span>
-        <span>{t("grp.colStatus")}</span>
-        <span>{t("grp.colLastActive")}</span>
-        <span>{t("grp.colActions")}</span>
-      </div>
-
-      {/* Member list */}
-      <div>
-        {filteredMembers.map((member) => (
-          <MemberRow
-            key={member.Id}
-            member={member}
-            onRemove={member.CanManage ? () => onRemoveMember(member.Id) : undefined}
-            onToggleAdmin={canManage && member.Role !== "Owner"
-              ? () => onUpdateRole(member.Id, member.Role === "Admin" ? "Member" : "Admin")
-              : undefined}
-          />
         ))}
-        {filteredMembers.length === 0 && (
-          <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", padding: "12px 14px" }}>
-            No users with this status.
-          </p>
-        )}
       </div>
+
+      {/* ── CHAT tab ── */}
+      {activeGroupTab === "chat" && (
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <ChatPanel
+            settings={settings}
+            accessToken={accessToken}
+            groupId={group.Id}
+            currentUserId={currentUserId}
+            members={members}
+            lastChatMessage={lastChatMessage}
+          />
+        </div>
+      )}
+
+      {/* ── MEMBERS tab ── */}
+      {activeGroupTab === "members" && (
+        <>
+          {/* Mobile-only: action row + invite + add member */}
+          <div className="sp-mobile-only">
+            <div className="sp-action-row">
+              <button className="sp-btn-action" disabled={isRequestingStatus} onClick={onRequestStatus} type="button">
+                <Send size={13} /> {t("grp.requestStatus")}
+              </button>
+              {canManage && (
+                <button className="sp-btn-icon" onClick={onCreateInvite} disabled={isCreatingInvite} title="Create invite" type="button">
+                  <Copy size={14} />
+                </button>
+              )}
+            </div>
+            {latestStatusRequest && (
+              <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+                <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
+              </div>
+            )}
+            {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{requestStatusError}</div>}
+            {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 14px" }}>{memberActionError}</div>}
+            {latestInvite && (
+              <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)", display: "flex", flexDirection: "column", gap: 6 }}>
+                <div className="sp-invite-box">
+                  <div className="sp-invite-url">{latestInvite.apiUrl}</div>
+                  <div className="sp-invite-actions">
+                    <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
+                      onClick={() => { void navigator.clipboard.writeText(latestInvite.apiUrl); }} type="button">
+                      <Copy size={13} />
+                      <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Copy</span>
+                    </button>
+                  </div>
+                </div>
+                <div className="sp-invite-box">
+                  <div className="sp-invite-url">{latestInvite.telegramUrl}</div>
+                  <div className="sp-invite-actions">
+                    <button className="sp-btn-icon" style={{ flex: 1, justifyContent: "center" }}
+                      onClick={() => { void navigator.clipboard.writeText(latestInvite.telegramUrl); }} type="button">
+                      <Copy size={13} />
+                      <span className="sp-mono sp-up" style={{ fontSize: 10, letterSpacing: "0.08em", marginLeft: 6 }}>Telegram</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+            {canManage && (
+              <div style={{ padding: "8px 14px", borderBottom: "1px solid var(--sp-border)" }}>
+                <button className="sp-btn-secondary" style={{ width: "100%", justifyContent: "center" }}
+                  disabled={isCreatingInvite} onClick={onCreateInvite} type="button">
+                  <Copy size={13} /> GENERATE LINKS
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Desktop-only: inline error messages */}
+          <div className="sp-desktop-only" style={{ flexDirection: "column", gap: 0 }}>
+            {latestStatusRequest && (
+              <div style={{ padding: "8px 24px", borderBottom: "1px solid var(--sp-border)" }}>
+                <p className="sp-mono" style={{ fontSize: 10, color: "var(--sp-shelter)" }}>{latestStatusRequest}</p>
+              </div>
+            )}
+            {requestStatusError && <div className="sp-error-box" style={{ margin: "8px 24px" }}>{requestStatusError}</div>}
+            {memberActionError  && <div className="sp-error-box" style={{ margin: "8px 24px" }}>{memberActionError}</div>}
+          </div>
+
+          {/* Filter chips */}
+          <div className="sp-filter-chips">
+            <FilterChip label={t("grp.all")}     count={members.length} active={statusFilter === "All"}       onClick={() => setStatusFilter("All")} />
+            <FilterChip label={t("grp.help")}    count={bd.NeedHelp}    status="NeedHelp"  active={statusFilter === "NeedHelp"}  onClick={() => setStatusFilter("NeedHelp")} />
+            <FilterChip label={t("grp.shelter")} count={bd.InShelter}   status="InShelter" active={statusFilter === "InShelter"} onClick={() => setStatusFilter("InShelter")} />
+            <FilterChip label={t("grp.safe")}    count={bd.Safe}        status="Safe"      active={statusFilter === "Safe"}      onClick={() => setStatusFilter("Safe")} />
+            <FilterChip label={t("grp.unknown")} count={bd.Unknown}     status="Unknown"   active={statusFilter === "Unknown"}   onClick={() => setStatusFilter("Unknown")} />
+            <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 4 }}>
+              <input
+                className="sp-text-input"
+                style={{ height: 28, fontSize: 11, padding: "0 8px", width: 160 }}
+                placeholder={t("grp.searchMembers")}
+                value={memberSearch}
+                onChange={(e) => setMemberSearch(e.target.value)}
+              />
+              {memberSearch && (
+                <button className="sp-btn-icon" style={{ padding: 4 }} onClick={() => setMemberSearch("")} type="button">
+                  <X size={12} />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Desktop: member table header */}
+          <div className="sp-member-table-head">
+            <span />
+            <span>{t("grp.colName")}</span>
+            <span>{t("grp.colRole")}</span>
+            <span>{t("grp.colStatus")}</span>
+            <span>{t("grp.colLastActive")}</span>
+            <span>{t("grp.colActions")}</span>
+          </div>
+
+          {/* Member list */}
+          <div>
+            {filteredMembers.map((member) => (
+              <MemberRow
+                key={member.Id}
+                member={member}
+                onRemove={member.CanManage ? () => onRemoveMember(member.Id) : undefined}
+                onToggleAdmin={canManage && member.Role !== "Owner"
+                  ? () => onUpdateRole(member.Id, member.Role === "Admin" ? "Member" : "Admin")
+                  : undefined}
+              />
+            ))}
+            {filteredMembers.length === 0 && (
+              <p className="sp-mono" style={{ fontSize: 11, color: "var(--sp-fg-3)", padding: "12px 14px" }}>
+                No users with this status.
+              </p>
+            )}
+          </div>
+        </>
+      )}
     </div>
   );
 }
