@@ -1933,4 +1933,10 @@ input, textarea, select {
     background: none;
   }
   .sp-toast { left: calc(50% + 32px); }
+
+  /* On desktop the cluster is fixed; app-content needs no bottom padding */
+  .app-content {
+    padding-bottom: 0;
+    overflow: hidden;
+  }
 }
