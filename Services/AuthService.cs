@@ -19,10 +19,12 @@ public class AuthService(
     SafePulseContext db,
     IMongoDatabase mongoDatabase,
     IOptions<AuthOptions> authOptions,
-    IOptions<TelegramOptions> telegramOptions) : IAuthService
+    IOptions<TelegramOptions> telegramOptions,
+    IOptions<EmailVerificationOptions> emailVerificationOptions) : IAuthService
 {
     private readonly AuthOptions _auth = authOptions.Value;
     private readonly TelegramOptions _telegram = telegramOptions.Value;
+    private readonly EmailVerificationOptions _emailVerification = emailVerificationOptions.Value;
     private readonly IMongoCollection<RefreshSession> _refreshSessions = mongoDatabase.GetCollection<RefreshSession>("refreshSessions");
 
     public async Task<AppUser> RegisterWithPasswordAsync(
@@ -82,7 +84,7 @@ public class AuthService(
         if (user is null || string.IsNullOrWhiteSpace(user.PasswordHash) || !VerifyPassword(password, user.PasswordHash))
             throw new UnauthorizedAccessException("Invalid email or password");
 
-        if (!user.EmailVerifiedAt.HasValue)
+        if (!_emailVerification.Skip && !user.EmailVerifiedAt.HasValue)
             throw new InvalidOperationException("Email verification required");
 
         user.LastSeenOnlineAt = DateTime.UtcNow;

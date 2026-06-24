@@ -27,6 +27,18 @@ public class EmailVerificationService(
 
     public async Task SendVerificationEmailAsync(AppUser user, CancellationToken ct)
     {
+        // Demo mode: mark verified immediately and skip sending the email.
+        if (_opts.Skip)
+        {
+            if (!user.EmailVerifiedAt.HasValue)
+            {
+                user.EmailVerifiedAt = DateTime.UtcNow;
+                user.UpdatedAt = DateTime.UtcNow;
+                await db.SaveChangesAsync(ct);
+            }
+            return;
+        }
+
         if (user.EmailVerificationLastSentAt.HasValue)
         {
             var elapsed = (DateTime.UtcNow - user.EmailVerificationLastSentAt.Value).TotalSeconds;
