@@ -120,6 +120,7 @@ async function forceUpdate() {
 export default function App() {
   const queryClient = useQueryClient();
   const initialGroupId = useMemo(() => readInitialGroupId(), []);
+  const initialInviteToken = useMemo(() => readInitialInviteToken(), []);
   const [settings] = useState<AppSettings>(() => loadSettings());
   const [theme, setThemeState] = useState<"dark" | "light">(
     () => (localStorage.getItem("safepulse-theme") as "dark" | "light") ?? "dark",
@@ -134,7 +135,7 @@ export default function App() {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<Tab>(() => {
-    if (initialGroupId) return "groups";
+    if (initialGroupId || initialInviteToken) return "groups";
     return readInitialTab();
   });
   const [requestedGroupId, setRequestedGroupId] = useState<string | null>(initialGroupId);
@@ -151,6 +152,9 @@ export default function App() {
     if (params.has("emailVerified")) {
       window.history.replaceState({}, "", window.location.pathname + window.location.hash);
       setEmailVerifiedToast(true);
+    }
+    if (params.has("invite")) {
+      window.history.replaceState({}, "", window.location.pathname + window.location.hash);
     }
   }, []);
 
@@ -474,6 +478,7 @@ export default function App() {
               accessToken={session.AccessToken}
               currentUserId={session.User.Id}
               initialSelectedGroupId={initialGroupId}
+              initialInviteToken={initialInviteToken}
               openGroupId={requestedGroupId}
               onJoined={async () => {
                 if (statusConnectionRef.current?.state === "Connected")
@@ -1199,6 +1204,7 @@ function GroupsPage({
   accessToken,
   currentUserId,
   initialSelectedGroupId,
+  initialInviteToken,
   openGroupId,
   onJoined,
 }: {
@@ -1206,6 +1212,7 @@ function GroupsPage({
   accessToken: string;
   currentUserId: string;
   initialSelectedGroupId: string | null;
+  initialInviteToken: string | null;
   openGroupId: string | null;
   onJoined: () => Promise<void>;
 }) {
@@ -1223,6 +1230,14 @@ function GroupsPage({
   const [requestCreatedMessage, setRequestCreatedMessage] = useState<string | null>(null);
   const [isCreateModalOpen, setCreateModalOpen] = useState(false);
   const [isJoinModalOpen, setJoinModalOpen] = useState(false);
+
+  useEffect(() => {
+    if (initialInviteToken) {
+      setJoinModalOpen(true);
+      // Consumed by an authenticated session — don't replay on later loads.
+      clearStoredInviteToken();
+    }
+  }, [initialInviteToken]);
   const [deleteTarget, setDeleteTarget] = useState<MyGroupDto | null>(null);
 
   const groups = useQuery({
@@ -1428,6 +1443,7 @@ function GroupsPage({
           <JoinGroupForm
             settings={settings}
             accessToken={accessToken}
+            initialToken={initialInviteToken ?? undefined}
             onJoined={async () => {
               await onJoined();
               await queryClient.invalidateQueries({ queryKey: ["my-groups"] });
@@ -2548,15 +2564,17 @@ function TelegramLinkPanel({
 function JoinGroupForm({
   settings,
   accessToken,
+  initialToken,
   onJoined,
 }: {
   settings: AppSettings;
   accessToken: string;
+  initialToken?: string;
   onJoined: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
-  const [rawInvite, setRawInvite] = useState("");
-  const [token, setToken] = useState("");
+  const [rawInvite, setRawInvite] = useState(initialToken ?? "");
+  const [token, setToken] = useState(initialToken ? parseInviteToken(initialToken) : "");
   const [acceptedGroupName, setAcceptedGroupName] = useState<string | null>(null);
 
   const preview = useQuery({
@@ -2826,6 +2844,47 @@ function readInitialGroupId() {
   return new URLSearchParams(window.location.search).get("groupId");
 }
 
+const PENDING_INVITE_KEY = "safepulse-pending-invite";
+const PENDING_INVITE_TTL_MS = 60 * 60 * 1000; // 1 hour
+
+function readInitialInviteToken() {
+  if (typeof window === "undefined") return null;
+
+  // A token in the URL takes priority and is persisted so it survives the
+  // registration / email-verification round-trip, which reloads the page on a
+  // URL that no longer carries the invite (e.g. "/?emailVerified=1").
+  const fromUrl = new URLSearchParams(window.location.search).get("invite");
+  if (fromUrl) {
+    try {
+      localStorage.setItem(
+        PENDING_INVITE_KEY,
+        JSON.stringify({ token: fromUrl, savedAt: Date.now() }),
+      );
+    } catch {}
+    return fromUrl;
+  }
+
+  // No token in the URL: fall back to a recently stored one (set before the
+  // auth round-trip). Expired entries are ignored and cleaned up.
+  try {
+    const raw = localStorage.getItem(PENDING_INVITE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as { token?: string; savedAt?: number };
+    if (parsed?.token && parsed.savedAt && Date.now() - parsed.savedAt < PENDING_INVITE_TTL_MS) {
+      return parsed.token;
+    }
+    localStorage.removeItem(PENDING_INVITE_KEY);
+  } catch {
+    try { localStorage.removeItem(PENDING_INVITE_KEY); } catch {}
+  }
+  return null;
+}
+
+function clearStoredInviteToken() {
+  if (typeof window === "undefined") return;
+  try { localStorage.removeItem(PENDING_INVITE_KEY); } catch {}
+}
+
 function readInitialTab(): Tab {
   if (typeof window === "undefined") return "overview";
   const hash = window.location.hash.slice(1);
@@ -2848,8 +2907,10 @@ function parseInviteToken(value: string) {
   if (joinIndex >= 0) return trimmed.slice(joinIndex + joinPrefix.length).split(/[/?#&\s]/)[0];
   try {
     const url = new URL(trimmed);
+    const q = url.searchParams.get("invite");
+    if (q) return q;                       // new web link
     const parts = url.pathname.split("/").filter(Boolean);
-    if (parts.length > 0) return parts[parts.length - 1];
+    if (parts.length > 0) return parts[parts.length - 1];  // legacy /api/invites/<token>
   } catch {}
   return trimmed.split(/[/?#&\s]/)[0];
 }

@@ -329,8 +329,17 @@ public class GroupsController(
         CreatedAt = invite.CreatedAt,
         RevokedAt = invite.RevokedAt,
         TelegramUrl = $"https://t.me/{_telegramOptions.BotUsername}?start=join_{invite.Token}",
-        ApiUrl = $"{Request.Scheme}://{Request.Host}/api/invites/{invite.Token}"
+        ApiUrl = BuildInviteLink(invite.Token)
     };
+
+    private string BuildInviteLink(string token)
+    {
+        var publicBaseUrl = _appOptions.PublicBaseUrl?.Trim().TrimEnd('/');
+        if (string.IsNullOrWhiteSpace(publicBaseUrl))
+            publicBaseUrl = "http://localhost:5002";
+
+        return $"{publicBaseUrl}/?invite={Uri.EscapeDataString(token)}";
+    }
 
     private static readonly SemaphoreSlim _telegramSemaphore = new(25, 25);
 
